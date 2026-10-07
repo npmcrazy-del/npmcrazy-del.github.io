@@ -1,6 +1,6 @@
 {
-  "name": "NET·SIM Network Simulator",
-  "short_name": "NET·SIM",
+  "name": "𝐍𝐄𝐓𝐖𝐎𝐑𝐊",
+  "short_name": "𝐍𝐄𝐓𝐖𝐎𝐑𝐊",
   "description": "Network simulator",
   "start_url": "./index.html",
   "scope": "./",

@@ -1,8 +1,8 @@
 [{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "io.github.npmcrazy_del.twa",
-    "sha256_cert_fingerprints": ["3E:05:4B:13:D0:A3:73:F4:AC:1F:91:BB:F4:28:E4:FA:63:9F:FB:24:EE:D9:A8:9F:45:D1:03:B1:91:E5:80:91"]
-  }
-}]
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.npmcrazy_del.twa",
+        "sha256_cert_fingerprints": ["7E:B1:AB:34:B2:33:41:31:61:71:73:72:8F:63:D0:39:14:38:C7:07:D7:EC:1B:7E:32:3C:24:90:9D:4C:F2:5E"]
+      }
+    }]

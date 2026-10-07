@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#080621"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Network Simulator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--bg:#ebe8ee;--nav:#1f3a78;--nav2:#34549f;--ac:#17b5ea;--tx:#17233f;--card:#f6f6fa;--bd:#b9bfd0;--ok:#2ecc40;--bad:#ff3b30;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;height:100dvh;touch-action:pan-x pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overflow:hidden;font:13px/1.35 system-ui,'Segoe UI',Roboto,sans-serif;color:var(--tx);background:var(--bg);overscroll-behavior:none}
+body{display:flex;flex-direction:column;height:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+input,textarea,.term,#evd,#tip{-webkit-user-select:text;user-select:text}
+#top,#cats,#items{touch-action:pan-x}#wb,#db,#ps,.ab{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+@media(pointer:coarse){input,select,textarea,.ti{font-size:16px!important}.b{min-height:40px}#cats button,.tabs2 button{min-height:42px}.tile i{width:84px;height:74px}}
+#top{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--nav);overflow-x:auto;scrollbar-width:none;flex:none}
+#top::-webkit-scrollbar{display:none}
+.b{background:var(--nav2);color:#fff;border:0;border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap;flex:none;touch-action:manipulation;transition:background .2s}
+.b.on{background:var(--ac);color:#06223a;font-weight:600}
+.b:active{transform:scale(.96)}
+.sep{width:1px;height:22px;background:#ffffff40;flex:none}
+.logo{color:#fff;font-weight:700;letter-spacing:.04em;flex:none;margin-right:2px}
+#main{flex:1;min-height:0;position:relative}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:default}
+#hint{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:#17233fe0;color:#fff;padding:6px 14px;border-radius:999px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .25s;max-width:92%;text-align:center;z-index:5}
+#hint.on{opacity:1}
+#tip{position:absolute;z-index:6;background:#fffffa;border:1px solid #333;padding:6px 8px;font:11px/1.35 ui-monospace,Consolas,monospace;white-space:pre;pointer-events:none;display:none;max-width:96%;overflow:hidden}
+#dock{position:absolute;right:8px;bottom:8px;width:min(500px,calc(100% - 16px));background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 6px 24px #0003;z-index:4;display:flex;flex-direction:column;max-height:44%}
+#dh{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--nav);color:#fff;border-radius:9px 9px 0 0;cursor:pointer}
+#dh b{flex:1;font-size:12px}
+#dh .b{padding:4px 10px}
+#db{overflow:auto;display:none;flex:1;min-height:0}
+#dock.open #db{display:block}
+.chip{border:1.5px solid var(--c);color:var(--c);background:#fff;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;min-height:28px}.chip.on{background:var(--c);color:#fff}
+#flt{display:flex;gap:6px;flex-wrap:wrap;padding:6px;align-items:center;border-bottom:1px solid var(--bd)}
+.msg{background:#eef4ff;border:1px solid #bcd0ff;border-radius:8px;padding:6px 8px;margin:4px 0}
+.tabs2{display:flex;border-bottom:1px solid var(--bd);position:sticky;top:0;background:#fff}
+.tabs2 button{flex:1;padding:6px;border:0;background:none;cursor:pointer}
+.tabs2 button.on{border-bottom:2px solid var(--ac);font-weight:600}
+table.tb{width:100%;border-collapse:collapse;font-size:11px}
+.tb th{background:#e3e6f0;text-align:left;padding:3px 5px;position:sticky;top:0}
+.tb td{padding:3px 5px;border-bottom:1px solid #e6e8f0}
+.tb tr[data-i]{cursor:pointer}.tb tr.sel{background:#d8ecff}
+.dot{display:inline-block;width:10px;height:10px;border-radius:2px}
+#evd{font:11px/1.4 ui-monospace,Consolas,monospace;white-space:pre-wrap;padding:6px 8px;background:#f4f6fb;border-top:1px solid var(--bd)}
+#drawer{flex:none;background:#dde2ee;border-top:2px solid var(--nav);padding:4px 6px calc(4px)}
+#cats,#items{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:3px 0}
+#cats button{border:0;background:#c3cbe0;border-radius:8px;padding:6px 12px;cursor:pointer;flex:none}
+#cats button.on{background:var(--nav);color:#fff}
+.it{flex:none;width:96px;height:78px;border:1px solid var(--bd);background:#fff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-size:10.5px;text-align:center;touch-action:manipulation}
+.it.on{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac) inset;background:#e8f7fd}
+.it img{width:60px;height:47px}
+#toast{position:fixed;left:50%;bottom:calc(120px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(10px);background:#17233f;color:#fff;padding:8px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:92%;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%)}
+#ps{position:fixed;inset:auto 0 0 0;background:#fff;z-index:40;border-radius:14px 14px 0 0;box-shadow:0 -6px 30px #0004;padding:10px;display:none;max-height:55%;overflow:auto}
+#ps.on{display:block}
+#ps .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin-top:8px}
+#ps .g button{border:1px solid var(--bd);background:#f6f6fa;border-radius:8px;padding:8px;text-align:left;cursor:pointer}
+#ps .g button[disabled]{opacity:.4}
+#ov{position:fixed;left:0;right:0;top:0;height:100%;background:#0006;z-index:50;display:none;align-items:center;justify-content:center;padding:10px}
+#ov.on{display:flex}
+#win{width:min(760px,100%);height:min(680px,100%);background:var(--card);border:1px solid #666;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 50px #0006}
+#wh{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--bd)}
+#wh b{flex:1}
+#wh button{border:0;background:none;font-size:18px;cursor:pointer;padding:0 6px}
+#wt{display:flex;gap:2px;padding:6px 10px 0;background:#fff;overflow-x:auto;flex:none}
+#wt button{border:0;background:none;padding:8px 14px;cursor:pointer;border-bottom:3px solid transparent}
+#wt button.on{border-color:var(--nav2);font-weight:600}
+#wb{flex:1;min-height:0;overflow:auto;padding:12px}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.row label{width:120px;flex:none}
+.row input[type=text],.row select,.row textarea{flex:1;min-width:0;padding:7px 8px;border:1px solid var(--bd);border-radius:6px;background:#fff}
+.row input.bad{border-color:var(--bad)}
+.row input:disabled{background:#eceef4}
+h4{margin:10px 0 4px;color:var(--nav)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;background:#1a3a7a;padding:14px;border-radius:6px}
+.tile{background:none;border:0;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px}
+.tile i{font-style:normal;font-size:34px;width:78px;height:70px;background:#3cc4ef;display:flex;align-items:center;justify-content:center;border:1px solid #fff4}
+.app{display:flex;flex-direction:column;height:100%;min-height:340px}
+.ah{background:#2a47d6;color:#fff;padding:4px 8px;display:flex;align-items:center}
+.ah b{flex:1;font-weight:500}.ah button{background:#fff;color:#111;border:1px solid #999;width:28px;height:24px;cursor:pointer}
+.ab{flex:1;min-height:0;overflow:auto;background:#fff;padding:8px;border:1px solid var(--bd)}
+.term{background:#14181f;color:#e6e6e6;font:12px/1.4 ui-monospace,Consolas,monospace;padding:8px;overflow:auto;height:100%;min-height:300px;white-space:pre-wrap;word-break:break-all;cursor:text}
+.tl{display:flex}.tl span{white-space:pre}
+.ti{background:transparent;border:0;outline:0;color:inherit;font:inherit;flex:1;min-width:0}
+.web{border:1px solid var(--bd);background:#fff;min-height:220px;padding:10px;margin-top:8px;overflow:auto}
+.split{display:flex;gap:10px;height:100%}
+.nav{flex:none;width:110px;border:1px solid var(--bd);background:#fff}
+.nav button{display:block;width:100%;padding:9px;border:0;border-bottom:1px solid #e6e8f0;background:none;text-align:left;cursor:pointer}
+.nav button.on{background:var(--ac);color:#fff}
+.led{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.phys{display:flex;gap:16px;align-items:center;margin-bottom:10px}
+.phys img{width:120px;height:96px;background:#fff;border:1px solid var(--bd);border-radius:10px}
+.sm{font-size:11px;color:#556}
+@media(max-width:640px){#ov{padding:0}#win{height:100%;border-radius:0}.row label{width:84px}.split{flex-direction:column}.nav{width:auto;display:flex}.nav button{border-bottom:0}.logo{display:none}}
+</style>
+</head>
+<body>
+<div id="top">
+ <span class="logo">NET·SIM</span>
+ <button class="b on" id="m-rt">Realtime</button><button class="b" id="m-sim">Simulation</button>
+ <span class="sep"></span>
+ <button class="b on" data-tool="sel">➤ Select</button>
+ <button class="b" data-tool="insp">🔍 Inspect</button>
+ <button class="b" data-tool="del">✖ Delete</button>
+ <button class="b" data-tool="note">📝 Note</button>
+ <button class="b" data-tool="pdu">✉ PDU</button>
+ <button class="b" data-tool="msg">💬 Message</button>
+ <span class="sep"></span>
+ <button class="b" id="b-save">💾 Save</button><button class="b" id="b-open">📂 Open</button><input type="file" id="fi" hidden>
+ <button class="b" id="b-demo">Demo</button><button class="b" id="b-clear">Clear</button>
+</div>
+<div id="main">
+ <canvas id="cv"></canvas>
+ <div id="hint"></div><div id="tip"></div>
+ <div id="dock" class="open">
+  <div id="dh"><b id="dt">PDU List</b><button class="b" id="d-play">▶ Play</button><button class="b" id="d-step">⏭ Step</button><button class="b" id="d-rst">⟲ Reset</button></div>
+  <div id="db">
+   <div class="tabs2"><button data-dt="ev">Event List</button><button data-dt="pdu" class="on">PDU List</button></div>
+   <div id="dp-ev" style="display:none"><div id="flt"><span class="sm">Show:</span></div><table class="tb"><thead><tr><th></th><th>Time</th><th>Last Device</th><th>At Device</th><th>Type</th><th>Info</th></tr></thead><tbody id="evb"></tbody></table><div id="evd">Tap an event to inspect its OSI layers.</div></div>
+   <div id="dp-pdu"><table class="tb"><thead><tr><th>Status</th><th>Source</th><th>Destination</th><th>Type</th><th>Time</th></tr></thead><tbody id="pdub"></tbody></table></div>
+  </div>
+ </div>
+</div>
+<div id="drawer"><div id="cats"></div><div id="items"></div></div>
+<div id="toast"></div>
+<div id="ps"></div>
+<div id="ov"><div id="win"><div id="wh"><b id="wn"></b><button id="wx">✕</button></div><div id="wt"></div><div id="wb"></div></div></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s), BC = 'FFFF.FFFF.FFFF', BIP = '255.255.255.255';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ip2n = s => { const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec((s || '').trim()); if (!m) return null; const o = m.slice(1).map(Number); return o.some(x => x > 255) ? null : ((o[0] * 16777216) + (o[1] << 16) + (o[2] << 8) + o[3]) >>> 0; };
+const n2ip = n => [n >>> 24, n >>> 16 & 255, n >>> 8 & 255, n & 255].join('.');
+const m2p = m => { const n = ip2n(m); let c = 0; while (c < 32 && (n & (0x80000000 >>> c))) c++; return c; };
+const same = (a, b, m) => { const x = ip2n(a), y = ip2n(b), k = ip2n(m); return x !== null && y !== null && k !== null && ((x & k) >>> 0) === ((y & k) >>> 0); };
+const r8 = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
+const newMac = () => `0001.42${r8()}.${r8()}${r8()}`;
+const ll6 = mac => { const h = mac.replace(/\./g, ''), b = [0,2,4,6,8,10].map(i => parseInt(h.substr(i, 2), 16)); b[0] ^= 2; const g = (x, y) => ((x << 8) | y).toString(16).toUpperCase(); return `FE80::${g(b[0], b[1])}:${g(b[2], 255)}:${g(254, b[3])}:${g(b[4], b[5])}`; };
+const COL = { ICMP: '#2ecc40', ARP: '#ff9f0a', DHCP: '#af52de', DNS: '#0a84ff', TCP: '#ff375f', HTTP: '#ff375f' };
+const ab = n => n.replace('FastEthernet', 'Fa').replace('GigabitEthernet', 'Gig');
+
+/* ───────── Core model ───────── */
+class Packet {
+  constructor(o) { Object.assign(this, { type: '', smac: '', dmac: '', sip: '', dip: '', ttl: 128, data: {}, info: '' }, o); }
+  clone() { const c = new Packet(this); c.data = { ...this.data }; return c; }
+}
+class Port {
+  constructor(n, i, name) { this.n = n; this.i = i; this.name = name; this.peer = null; this.cab = null; this.ip = ''; this.mask = ''; this.admin = n.kind !== 'router' && n.kind !== 'asa'; this.media = 'eth'; this.mac = newMac(); this.amber = 0; this.con = name === 'Console'; this.rs = name === 'RS232'; }
+  get ok() { return !!(!this.con && !this.rs && this.peer && this.cab && this.cab.ok && this.admin && this.peer.admin && this.n.on && this.peer.n.on); }
+}
+let NID = 0, CNT = {};
+class NetworkNode {
+  constructor(kind, model, x, y, names, pre) {
+    this.id = ++NID; this.kind = kind; this.model = model; this.x = x; this.y = y; this.on = true; this.arp = {}; this.pend = {}; this.w = {}; this.seq = 0;
+    const key = pre || kind, c = CNT[key] = (CNT[key] ?? -1) + 1;
+    this.name = (pre || { pc: 'PC', laptop: 'Laptop', server: 'Server', switch: 'Switch', router: 'Router' }[kind] || kind) + c;
+    this.ports = names.map((n, i) => Array.isArray(n) ? Object.assign(new Port(this, i, n[0]), n[1]) : new Port(this, i, n));
+  }
+  wait(k, ms) { return new Promise(r => { this.w[k] = r; E.sched(ms, () => { if (this.w[k] === r) { delete this.w[k]; r(null); } }); }); }
+  fire(k, v) { const r = this.w[k]; if (r) { delete this.w[k]; r(v); } }
+  reset() { this.bubble = null; this.arp = {}; this.pend = {}; Object.keys(this.w).forEach(k => this.fire(k, null)); }
+}
+const emit = (n, p, pkt) => p.svi ? n.fwd(pkt, null) : E.tx(p, pkt);
+function l3out(n, p, pkt, nh) {
+  pkt.smac = p.mac;
+  if (nh === BIP) { pkt.dmac = BC; emit(n, p, pkt); return; }
+  const m = n.arp[nh]; if (m) { pkt.dmac = m; emit(n, p, pkt); return; }
+  const L = n.pend[nh] = n.pend[nh] || []; L.push({ p, pkt });
+  if (L.length === 1) {
+    emit(n, p, new Packet({ type: 'ARP', smac: p.mac, dmac: BC, sip: p.ip, dip: nh, data: { op: 'req', tip: nh }, info: `Who has ${nh}? Tell ${p.ip}` }));
+    E.sched(3000, () => { if (!n.arp[nh]) delete n.pend[nh]; });
+  }
+}
+function learn(n, ip, mac) { n.arp[ip] = mac; const L = n.pend[ip]; if (L) { delete n.pend[ip]; L.forEach(({ p, pkt }) => { pkt.smac = p.mac; pkt.dmac = mac; emit(n, p, pkt); }); } }
+const arpRep = (p, k) => new Packet({ type: 'ARP', smac: p.mac, dmac: k.smac, sip: p.ip, dip: k.sip, data: { op: 'rep' }, info: `${p.ip} is at ${p.mac}` });
+
+class DevicePC extends NetworkNode {
+  constructor(kind, model, x, y, S = {}) {
+    const nc = S.nics || ['FastEthernet0'];
+    super(kind, model, x, y, [nc[0], ...(S.rs === false ? [] : ['RS232']), ...nc.slice(1)], S.pre);
+    this.nics = this.ports.filter(q => !q.rs && !q.pass); const n0 = this.nics[0];
+    this.nics.slice(1).forEach(q => ['ip', 'mask'].forEach(f => Object.defineProperty(q, f, { get: () => n0[f], set: v => { n0[f] = v; }, configurable: true })));
+    if (this.nics.some(q => q.air === 'wifi')) this.wifi = { ssid: 'Default', key: '' };
+    if (S.web) this.svc = { dhcp: { on: false, leases: {} }, dns: { on: false, recs: [] }, http: { on: true, files: { 'index.html': web(S.web) } } };
+    this.gw = ''; this.dns = ''; this.dhcp = false; this.inbox = [];
+  }
+  get host() { return true; } get p() { return this.nics.find(q => q.ok) || this.nics[0]; }
+  get ex() { return this.wifi ? { wifi: this.wifi } : undefined; } set ex(o) { if (o && o.wifi) this.wifi = o.wifi; }
+  rx(p, k) {
+    if (k.dmac !== p.mac && k.dmac !== BC) return;
+    if (k.type === 'ARP') {
+      const d = k.data;
+      if (d.op === 'rep' || (p.ip && d.tip === p.ip)) learn(this, k.sip, k.smac);
+      if (d.op === 'req' && p.ip && d.tip === p.ip) E.tx(p, arpRep(p, k));
+      return;
+    }
+    if (k.dip !== p.ip && k.dip !== BIP) return;
+    this.ipIn(p, k);
+  }
+  sendRaw(pkt) { pkt.smac = this.p.mac; E.tx(this.p, pkt); }
+  sendIP(dip, type, data, info) {
+    const p = this.p; if (!p.ok || !p.ip) return 'down';
+    const nh = (dip === BIP || same(p.ip, dip, p.mask)) ? dip : this.gw;
+    if (!nh) return 'nogw';
+    if (!data || !data.nid) data = { ...data, nid: this.id + ':' + (this.nidc = (this.nidc || 0) + 1) }; l3out(this, p, new Packet({ type, sip: p.ip, dip, data, info, ttl: 128 }), nh); return 'ok';
+  }
+  ipIn(p, k) {
+    const d = k.data, S = this.svc;
+    if (k.type === 'ICMP') {
+      if (d.type === 'echo') {
+        if (d.msg) { this.inbox.push({ from: d.from || k.sip, ip: k.sip, text: d.msg, t: E.now }); bubble(this, `💬 ${d.msg}`, '#0a5fd8', 7000); }
+        this.sendIP(k.sip, 'ICMP', { type: 'rep', seq: d.seq, ack: !!d.msg, nid: d.nid }, `Echo reply seq=${d.seq}${d.msg ? ' (message received)' : ''}`);
+      }
+      else this.fire('icmp' + d.seq, { type: d.type, ttl: k.ttl, t: E.now, from: k.sip });
+    } else if (k.type === 'DHCP') {
+      if (d.op === 'discover' && S && S.dhcp.on && p.ip) this.dhcpOffer(k, 'offer');
+      else if (d.op === 'request' && S && S.dhcp.on && p.ip) this.dhcpOffer(k, 'ack');
+      else if (d.op === 'offer') this.fire('dhcpo', d);
+      else if (d.op === 'ack') this.fire('dhcpa', d);
+    } else if (k.type === 'DNS') {
+      if (d.op === 'q' && S && S.dns.on) { const r = S.dns.recs.find(r => r.name.toLowerCase() === d.name.toLowerCase()); const ans = r ? (r.ip || this.p.ip) : ''; this.sendIP(k.sip, 'DNS', { op: 'r', name: d.name, ip: ans, nid: d.nid }, `DNS response ${d.name} → ${ans || 'NXDOMAIN'}`); }
+      else if (d.op === 'r') this.fire('dns' + d.name, d.ip);
+    } else if (k.type === 'TCP' || k.type === 'HTTP') {
+      const H = S && S.http;
+      if (d.f === 'SYN') { if (H && H.on) this.sendIP(k.sip, 'TCP', { f: 'SYNACK', nid: d.nid }, 'TCP SYN, ACK (port 80)'); }
+      else if (d.f === 'SYNACK') this.fire('syn' + k.sip, 1);
+      else if (d.f === 'GET') {
+        if (H && H.on) { const f = H.files[d.path.replace(/^\//, '') || 'index.html']; this.sendIP(k.sip, 'HTTP', { f: 'RESP', nid: d.nid, code: f != null ? 200 : 404, body: f != null ? f : '<h2>404 Not Found</h2>' }, `HTTP/1.1 ${f != null ? '200 OK' : '404 Not Found'}`); }
+      } else if (d.f === 'RESP') this.fire('http' + k.sip, d);
+    }
+  }
+  dhcpOffer(k, op) {
+    const D = this.svc.dhcp, c = k.data.cmac; let ip = D.leases[c];
+    if (!ip) { const used = Object.keys(D.leases).length; if (used >= D.max) return; ip = n2ip(ip2n(D.start) + used); if (op === 'offer') D.leases[c] = ip; }
+    this.sendRaw(new Packet({ type: 'DHCP', dmac: c, sip: this.p.ip, dip: BIP, data: { op, cmac: c, yi: ip, mask: D.mask, gw: D.gw, dns: D.dns }, info: op === 'offer' ? `DHCP OFFER ${ip}` : `DHCP ACK ${ip}` }));
+  }
+  apipa() { const p = this.p; p.ip = `169.254.${1 + Math.floor(Math.random() * 254)}.${1 + Math.floor(Math.random() * 254)}`; p.mask = '255.255.0.0'; this.gw = ''; }
+  async dhcpReq(st) {
+    const p = this.p; st('Requesting IP address...'); p.ip = ''; p.mask = ''; this.gw = ''; this.dns = '';
+    let w = this.wait('dhcpo', 3000);
+    this.sendRaw(new Packet({ type: 'DHCP', dmac: BC, sip: '0.0.0.0', dip: BIP, data: { op: 'discover', cmac: p.mac }, info: 'DHCP DISCOVER (broadcast)' })); E.pump();
+    const o = await w; if (!o) { this.apipa(); st(`DHCP failed. APIPA is being used (${p.ip}).`); return false; }
+    w = this.wait('dhcpa', 3000);
+    this.sendRaw(new Packet({ type: 'DHCP', dmac: BC, sip: '0.0.0.0', dip: BIP, data: { op: 'request', cmac: p.mac, yi: o.yi }, info: `DHCP REQUEST ${o.yi}` })); E.pump();
+    const a = await w; if (!a) { this.apipa(); st(`DHCP failed. APIPA is being used (${p.ip}).`); return false; }
+    p.ip = a.yi; p.mask = a.mask; this.gw = a.gw === '0.0.0.0' ? '' : a.gw; this.dns = a.dns === '0.0.0.0' ? '' : a.dns;
+    st('DHCP request successful.'); E.need(); return true;
+  }
+  async resolve(name) { if (!this.dns) return null; const w = this.wait('dns' + name, 3000); this.sendIP(this.dns, 'DNS', { op: 'q', name }, `DNS query ${name}`); E.pump(); return (await w) || null; }
+  async ping(target, out) {
+    let ip = target;
+    if (ip2n(ip) === null) { ip = await this.resolve(target); if (!ip) return out(`Ping request could not find host ${target}. Please check the name and try again.\n`); }
+    out(`\nPinging ${ip} with 32 bytes of data:\n\n`);
+    let ok = 0; const ts = [];
+    for (let i = 0; i < 4; i++) {
+      const seq = ++this.seq, w = this.wait('icmp' + seq, 2000), t0 = E.now;
+      const s = this.sendIP(ip, 'ICMP', { type: 'echo', seq }, `Echo request seq=${seq}`); E.pump();
+      if (s === 'nogw') { out('Destination host unreachable.\n'); continue; }
+      const r = await w;
+      if (!r) out('Request timed out.\n');
+      else if (r.type === 'unreach') out(`Reply from ${r.from}: Destination host unreachable.\n`);
+      else { ok++; const ms = Math.round(r.t - t0); ts.push(ms); out(`Reply from ${ip}: bytes=32 time=${ms < 1 ? '<1' : ms}ms TTL=${r.ttl}\n`); }
+    }
+    out(`\nPing statistics for ${ip}:\n    Packets: Sent = 4, Received = ${ok}, Lost = ${4 - ok} (${(4 - ok) * 25}% loss),\n`);
+    if (ok) out(`Approximate round trip times in milli-seconds:\n    Minimum = ${Math.min(...ts)}ms, Maximum = ${Math.max(...ts)}ms, Average = ${Math.round(ts.reduce((a, b) => a + b, 0) / ts.length)}ms\n`);
+    out('\n');
+  }
+  async http(url, st) {
+    const u = url.trim().replace(/^https?:\/\//i, ''), host = u.split('/')[0], path = '/' + u.split('/').slice(1).join('/');
+    let via = null; const R = o => ({ ...o, via }); if (!host) return R({ err: 'Enter a URL' });
+    let ip = host; if (ip2n(ip) === null) { st(`Resolving ${host} via DNS...`); ip = await this.resolve(host); if (!ip) return R({ err: 'Host Name Unresolved' }); via = { host, ip }; }
+    st(`TCP handshake with ${ip}...`);
+    let w = this.wait('syn' + ip, 3000); this.sendIP(ip, 'TCP', { f: 'SYN' }, 'TCP SYN → port 80'); E.pump();
+    if (!(await w)) return R({ err: 'Request Timeout' });
+    this.sendIP(ip, 'TCP', { f: 'ACK' }, 'TCP ACK'); E.pump();
+    st('Sending HTTP GET...');
+    w = this.wait('http' + ip, 3000); this.sendIP(ip, 'HTTP', { f: 'GET', path }, `HTTP GET ${path}`); E.pump();
+    const r = await w; return R(r ? { code: r.code, html: r.body } : { err: 'Request Timeout' });
+  }
+}
+class DeviceServer extends DevicePC {
+  constructor(model, x, y, S = {}) {
+    super('server', model, x, y, S);
+    this.svc = {
+      dhcp: { on: false, pool: 'serverPool', gw: '0.0.0.0', dns: '0.0.0.0', start: '192.168.1.100', mask: '255.255.255.0', max: 50, leases: {} },
+      dns: { on: true, recs: [{ name: 'www.myschool.com', ip: '' }] },
+      http: { on: true, files: { 'index.html': '<html><body style="font-family:sans-serif;text-align:center"><h2>🏫 My School</h2><p>Welcome to www.myschool.com</p><p>The web server is working.</p></body></html>' } }
+    };
+    if (S.web) this.svc.http.files['index.html'] = web(S.web);
+  }
+  reset() { super.reset(); this.svc.dhcp.leases = {}; }
+}
+const fa = n => Array.from({ length: n }, (_, i) => 'FastEthernet0/' + (i + 1)), gi = (n, s = 1) => Array.from({ length: n }, (_, i) => 'GigabitEthernet0/' + (i + s));
+const web = t => `<html><body style="font-family:sans-serif;text-align:center"><h2>${t}</h2><p>The service is running.</p></body></html>`;
+class DeviceSwitch extends NetworkNode {
+  constructor(model, x, y, S = {}) {
+    super(S.k || 'switch', model, x, y, [...(S.ports || [...fa(24), ...gi(2)]), ...(S.cli === false ? [] : ['Console'])], S.pre);
+    this.mac = {}; this.mode = 'user'; this.cur = null; this.l3 = !!S.l3; this.nocli = S.cli === false;
+    this.svi = { n: this, name: 'Vlan1', svi: true, ip: '', mask: '', admin: false, mac: newMac() }; initIos(this);
+  }
+  get host() { return false; }
+  fwd(k, p) { const o = this.mac[k.dmac]; if (k.dmac !== BC && o) { if (o !== p) E.tx(o, k); return; } this.ports.forEach(q => { if (q !== p && q.ok) E.tx(q, k); }); }
+  rx(p, k) {
+    this.mac[k.smac] = p; const s = this.svi;
+    if (s.ip && s.admin && (k.dmac === s.mac || k.dmac === BC)) { this.cpu(k, p); if (k.dmac === s.mac) return; }
+    this.fwd(k, p);
+  }
+  cpu(k) {
+    const s = this.svi, d = k.data;
+    if (k.type === 'ARP') { if (d.op === 'rep' || d.tip === s.ip) learn(this, k.sip, k.smac); if (d.op === 'req' && d.tip === s.ip) this.fwd(arpRep(s, k), null); return; }
+    if (k.dmac !== s.mac || k.dip !== s.ip || k.type !== 'ICMP') return;
+    if (d.type === 'echo') this.send(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); else this.fire('icmp' + d.seq, { type: d.type, t: E.now });
+  }
+  send(dip, type, data, info) {
+    const s = this.svi; if (!s.ip || !s.admin || !same(s.ip, dip, s.mask)) return false;
+    l3out(this, s, new Packet({ type, sip: s.ip, dip, data, info, ttl: 255 }), dip); return true;
+  }
+  async ping(t, out) {
+    out(`\nType escape sequence to abort.\nSending 5, 100-byte ICMP Echos to ${t}, timeout is 2 seconds:\n`); let ok = 0;
+    for (let i = 0; i < 5; i++) { const seq = ++this.seq, w = this.wait('icmp' + seq, 2000); this.send(t, 'ICMP', { type: 'echo', seq }, `Echo request seq=${seq}`); E.pump(); const r = await w; if (r && r.type === 'rep') { ok++; out('!'); } else out('.'); }
+    out(`\nSuccess rate is ${ok * 20} percent (${ok}/5)\n`);
+  }
+  reset() { super.reset(); this.mac = {}; }
+}
+class DeviceRouter extends NetworkNode {
+  constructor(model, x, y, S = {}) { super(S.k || 'router', model, x, y, [...(S.ports || gi(2, 0)), 'Console'], S.pre); this.routes = []; this.mode = 'user'; this.cur = null; initIos(this); }
+  get host() { return false; }
+  route(dip) {
+    let best = null;
+    for (const p of this.ports) if (p.ip && p.ok && same(p.ip, dip, p.mask)) { const l = m2p(p.mask); if (!best || l > best.l) best = { l, p, nh: dip }; }
+    for (const r of this.routes) if (same(r.net, dip, r.mask)) { const l = m2p(r.mask), q = this.ports.find(p => p.ip && p.ok && same(p.ip, r.nh, p.mask)); if (q && (!best || l > best.l)) best = { l, p: q, nh: r.nh }; }
+    return best;
+  }
+  rOut(dip, type, data, info) { const r = this.route(dip); if (!r) return false; l3out(this, r.p, new Packet({ type, sip: r.p.ip, dip, data, info, ttl: 255 }), r.nh); return true; }
+  rx(p, k) {
+    if (k.dmac !== p.mac && k.dmac !== BC) return;
+    if (k.type === 'ARP') {
+      const d = k.data;
+      if (d.op === 'rep' || d.tip === p.ip) learn(this, k.sip, k.smac);
+      if (d.op === 'req' && p.ip && d.tip === p.ip) E.tx(p, arpRep(p, k));
+      return;
+    }
+    if (k.dmac === BC) return;
+    if (this.ports.some(q => q.ip && q.ip === k.dip)) {
+      const d = k.data;
+      if (k.type === 'ICMP') { if (d.type === 'echo') this.rOut(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); else this.fire('icmp' + d.seq, { type: d.type, t: E.now }); }
+      return;
+    }
+    if (--k.ttl <= 0) return;
+    const r = this.route(k.dip);
+    if (!r) { if (k.type === 'ICMP' && k.data.type === 'echo') this.rOut(k.sip, 'ICMP', { type: 'unreach', seq: k.data.seq, nid: k.data.nid }, 'Destination host unreachable'); return; }
+    if (this.fw && !this.fw(p, r.p, k)) return;
+    l3out(this, r.p, k, r.nh);
+  }
+  async ping(target, out) {
+    out(`\nType escape sequence to abort.\nSending 5, 100-byte ICMP Echos to ${target}, timeout is 2 seconds:\n`); let ok = 0;
+    for (let i = 0; i < 5; i++) { const seq = ++this.seq, w = this.wait('icmp' + seq, 2000); this.rOut(target, 'ICMP', { type: 'echo', seq }, `Echo request seq=${seq}`); E.pump(); const r = await w; if (r && r.type === 'rep') { ok++; out('!'); } else out('.'); }
+    out(`\nSuccess rate is ${ok * 20} percent (${ok}/5)\n`);
+  }
+  reset() { super.reset(); }
+}
+/* firewall: traffic from a higher security level to a lower one is allowed (and remembered); the reverse only for replies */
+class DeviceASA extends DeviceRouter {
+  constructor(model, x, y, S) {
+    super(model, x, y, { ...S, k: 'asa' }); this.est = new Set();
+    this.ports.filter(q => !q.con).forEach((q, i) => { q.nameif = i === 0 ? 'outside' : i === 1 ? 'inside' : ''; q.sec = i === 1 ? 100 : 0; });
+  }
+  fw(i, o, k) {
+    if (!i.nameif || !o.nameif) return false; const nid = k.data && k.data.nid;
+    if (i.sec > o.sec) { if (nid) { if (this.est.size > 4000) this.est.clear(); this.est.add(nid); } return true; }
+    return i.sec < o.sec && !!(nid && this.est.has(nid));
+  }
+  reset() { super.reset(); this.est.clear(); }
+}
+class DeviceHub extends NetworkNode {
+  constructor(model, x, y, S) { super(S.k || 'hub', model, x, y, S.ports, S.pre); }
+  get host() { return false; }
+  rx(p, k) { this.ports.forEach(q => { if (q !== p && q.ok) E.tx(q, k); }); }
+}
+class DeviceDumb extends NetworkNode {
+  constructor(model, x, y, S) { super(S.k || 'phone', model, x, y, S.ports, S.pre); }
+  get host() { return false; } rx() {}
+}
+const slotPorts = (n, radio) => Array.from({ length: n }, (_, i) => ['Radio' + (i + 1), { air: radio, slot: true, media: 'air' }]);
+class DeviceAP extends NetworkNode {
+  constructor(model, x, y, S = {}) {
+    super('ap', model, x, y, [...S.ports, ...slotPorts(24, S.radio || 'wifi')], S.pre);
+    this.mac = {}; this.ssid = 'Default'; this.key = ''; this.lw = !!S.lw; this.radio = S.radio || 'wifi'; this.range = S.range || 220; this.slots = this.ports.filter(p => p.slot);
+  }
+  get host() { return false; }
+  get ex() { return { ssid: this.ssid, key: this.key }; } set ex(o) { if (o) { this.ssid = o.ssid || 'Default'; this.key = o.key || ''; } }
+  fwd(k, p) { const o = this.mac[k.dmac]; if (k.dmac !== BC && o) { if (o !== p) E.tx(o, k); return; } this.ports.forEach(q => { if (q !== p && q.ok) E.tx(q, k); }); }
+  rx(p, k) { this.mac[k.smac] = p; this.fwd(k, p); }
+  wlans() {
+    if (!this.on) return [];
+    if (this.radio === 'cell') return [{ cell: 1 }];
+    if (this.lw) { const w = findWlc(this); return w ? w.wlans.filter(x => x.on !== false) : []; }
+    return [{ ssid: this.ssid, key: this.key }];
+  }
+  reset() { super.reset(); this.mac = {}; }
+}
+class DeviceWLC extends DevicePC {
+  constructor(model, x, y, S) { super('wlc', model, x, y, { nics: S.ports, rs: false, pre: S.pre }); this.wlans = [{ ssid: 'Default', key: '', on: true }]; }
+  get ex() { return { wlans: this.wlans }; } set ex(o) { if (o && o.wlans) this.wlans = o.wlans; }
+}
+class DeviceIPPhone extends DevicePC {
+  constructor(model, x, y, S) { super('ipphone', model, x, y, { nics: ['Switch', ['PC', { pass: true }]], rs: false, pre: S.pre }); this.sw = this.ports[0]; this.pcp = this.ports[1]; }
+  rx(p, k) { if (p === this.pcp) { E.tx(this.sw, k); return; } if (k.dmac === this.sw.mac) { super.rx(p, k); return; } if (k.dmac === BC) super.rx(p, k); E.tx(this.pcp, k); }
+}
+/* home router: LAN switch + Wi-Fi + DHCP server + routed WAN port with NAT */
+class DeviceWRouter extends DeviceSwitch {
+  constructor(model, x, y, S) {
+    super(model, x, y, { k: 'wrouter', ports: [['Internet', { wan: true }], ...S.lan, ...slotPorts(16, 'wifi')], cli: false, pre: S.pre });
+    this.wan = this.ports[0]; this.slots = this.ports.filter(p => p.slot); this.radio = 'wifi'; this.range = S.range || 200; this.ssid = 'Default'; this.key = '';
+    Object.assign(this.svi, { ip: '192.168.0.1', mask: '255.255.255.0', admin: true });
+    this.wc = { mode: 'dhcp', gw: '', dns: '' }; this.dh = { on: true, start: '192.168.0.100', max: 50, leases: {} }; this.nat = {};
+  }
+  get ex() { return { ssid: this.ssid, key: this.key, wc: this.wc, dh: { on: this.dh.on, start: this.dh.start, max: this.dh.max } }; }
+  set ex(o) { if (!o) return; this.ssid = o.ssid || 'Default'; this.key = o.key || ''; if (o.wc) this.wc = o.wc; if (o.dh) Object.assign(this.dh, o.dh); }
+  wlans() { return this.on ? [{ ssid: this.ssid, key: this.key }] : []; }
+  fwd(k, p) { const o = this.mac[k.dmac]; if (k.dmac !== BC && o && !o.wan) { if (o !== p) E.tx(o, k); return; } this.ports.forEach(q => { if (q !== p && q.ok && !q.wan) E.tx(q, k); }); }
+  rx(p, k) {
+    if (p.wan) return this.wanRx(p, k);
+    this.mac[k.smac] = p; const s = this.svi;
+    if (k.dmac === s.mac || k.dmac === BC) { this.cpu(k, p); if (k.dmac === s.mac) return; }
+    this.fwd(k, p);
+  }
+  cpu(k) {
+    const s = this.svi, d = k.data;
+    if (k.type === 'ARP') { if (d.op === 'rep' || d.tip === s.ip) learn(this, k.sip, k.smac); if (d.op === 'req' && d.tip === s.ip) this.fwd(arpRep(s, k), null); return; }
+    if (k.type === 'DHCP') { if (this.dh.on && (d.op === 'discover' || d.op === 'request')) this.dhcpServe(k); return; }
+    if (k.dmac !== s.mac) return;
+    if (k.dip === s.ip) { if (k.type === 'ICMP' && d.type === 'echo') this.send(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); return; }
+    this.routeOut(k);
+  }
+  dhcpServe(k) {
+    const s = this.svi, D = this.dh, c = k.data.cmac, op = k.data.op === 'discover' ? 'offer' : 'ack'; let ip = D.leases[c];
+    if (!ip) { const used = Object.keys(D.leases).length; if (used >= D.max) return; ip = n2ip(ip2n(D.start) + used); if (op === 'offer') D.leases[c] = ip; }
+    this.fwd(new Packet({ type: 'DHCP', smac: s.mac, dmac: c, sip: s.ip, dip: BIP, data: { op, cmac: c, yi: ip, mask: s.mask, gw: s.ip, dns: this.wc.dns || '0.0.0.0' }, info: op === 'offer' ? `DHCP OFFER ${ip}` : `DHCP ACK ${ip}` }), null);
+  }
+  routeOut(k) {
+    const s = this.svi, w = this.wan, d = k.data; if (--k.ttl <= 0 || same(s.ip, k.dip, s.mask)) return;
+    const fail = () => { if (k.type === 'ICMP' && d.type === 'echo') this.send(k.sip, 'ICMP', { type: 'unreach', seq: d.seq, nid: d.nid }, 'Destination host unreachable'); };
+    if (!w.ip || !w.ok) return fail();
+    const nh = same(w.ip, k.dip, w.mask) ? k.dip : this.wc.gw; if (!nh) return fail();
+    if (d.nid) { const K = Object.keys(this.nat); if (K.length > 4000) delete this.nat[K[0]]; this.nat[d.nid] = k.sip; }
+    k.sip = w.ip; l3out(this, w, k, nh);
+  }
+  wanSend(dip, type, data, info) { const w = this.wan, nh = same(w.ip, dip, w.mask) ? dip : this.wc.gw; if (!w.ip || !nh) return false; l3out(this, w, new Packet({ type, sip: w.ip, dip, data, info, ttl: 255 }), nh); return true; }
+  wanRx(p, k) {
+    if (k.dmac !== p.mac && k.dmac !== BC) return; const d = k.data;
+    if (k.type === 'ARP') { if (d.op === 'rep' || (p.ip && d.tip === p.ip)) learn(this, k.sip, k.smac); if (d.op === 'req' && p.ip && d.tip === p.ip) E.tx(p, arpRep(p, k)); return; }
+    if (k.type === 'DHCP') { if (d.op === 'offer') this.fire('dhcpo', d); else if (d.op === 'ack') this.fire('dhcpa', d); return; }
+    if (k.dmac === BC || !p.ip || k.dip !== p.ip) return;
+    const orig = d.nid && this.nat[d.nid];
+    if (orig) { if (--k.ttl <= 0) return; k.dip = orig; l3out(this, this.svi, k, orig); return; }
+    if (k.type === 'ICMP') { if (d.type === 'echo') this.wanSend(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); else this.fire('icmp' + d.seq, { type: d.type, t: E.now }); }
+  }
+  async wanDhcp(st) {
+    const w = this.wan, say = t => st && st(t); w.ip = ''; w.mask = ''; this.wc.gw = ''; this.wc.dns = ''; if (!w.ok) { say('WAN link is down'); return false; }
+    let wt = this.wait('dhcpo', 3000);
+    E.tx(w, new Packet({ type: 'DHCP', smac: w.mac, dmac: BC, sip: '0.0.0.0', dip: BIP, data: { op: 'discover', cmac: w.mac }, info: 'DHCP DISCOVER (broadcast)' })); E.pump();
+    const o = await wt; if (!o) { say('DHCP failed: no server answered on the Internet port'); return false; }
+    wt = this.wait('dhcpa', 3000);
+    E.tx(w, new Packet({ type: 'DHCP', smac: w.mac, dmac: BC, sip: '0.0.0.0', dip: BIP, data: { op: 'request', cmac: w.mac, yi: o.yi }, info: `DHCP REQUEST ${o.yi}` })); E.pump();
+    const a = await wt; if (!a) { say('DHCP failed'); return false; }
+    w.ip = a.yi; w.mask = a.mask; this.wc.gw = a.gw === '0.0.0.0' ? '' : a.gw; this.wc.dns = a.dns === '0.0.0.0' ? '' : a.dns; say(`Internet IP ${w.ip}`); E.need(); return true;
+  }
+  reset() { super.reset(); this.nat = {}; this.dh.leases = {}; }
+}
+function findWlc(ap) {
+  const seen = new Set([ap]), st = [ap];
+  while (st.length) {
+    const n = st.pop();
+    for (const p of n.ports) {
+      if (p.air || p.wan || !p.ok) continue; const m = p.peer.n; if (seen.has(m)) continue; seen.add(m);
+      if (m.kind === 'wlc') { if (m.on) return m; continue; }
+      if (m.on && ['switch', 'hub', 'ap', 'ipphone', 'wrouter'].includes(m.kind)) st.push(m);
+    }
+  }
+  return null;
+}
+/* wireless association: automatic, by distance + SSID + passphrase */
+function wifiSync() {
+  const aps = E.nodes.filter(n => n.slots && n.on), clients = [], want = new Map();
+  E.nodes.forEach(n => { if (n.on) n.ports.forEach(p => { if (p.air && !p.slot) clients.push(p); }); });
+  for (const c of clients) {
+    const cn = c.n; let best = null;
+    for (const a of aps) {
+      if (a.radio !== c.air) continue; const d = Math.hypot(a.x - cn.x, a.y - cn.y); if (d > a.range) continue;
+      const W = cn.wifi || { ssid: '', key: '' };
+      if (a.wlans().some(w => c.air === 'cell' || (w.ssid === W.ssid && (w.key || '') === (W.key || ''))) && (!best || d < best.d)) best = { a, d };
+    }
+    if (best) want.set(c, best.a);
+  }
+  const keep = new Set();
+  E.cables.filter(k => k.type === 'wifi').forEach(k => { const cl = k.a.slot ? k.b : k.a, ap = (k.a.slot ? k.a : k.b).n; if (want.get(cl) === ap) keep.add(cl); else delCable(k); });
+  for (const [c, a] of want) if (!keep.has(c)) {
+    const s = a.slots.find(q => !q.cab); if (!s) continue;
+    const k = { a: c, b: s, type: 'wifi', ok: true }; c.cab = s.cab = k; c.peer = s; s.peer = c; E.cables.push(k);
+  }
+  E.need();
+}
+/* ───────── device catalog (every device from the Packet Tracer palette) ───────── */
+const WL = ['Wireless0', { air: 'wifi', media: 'air' }], CEL = ['Cell0', { air: 'cell', media: 'air' }];
+const COAX = n => Array.from({ length: n }, (_, i) => ['Coaxial' + i, { media: 'coax' }]), P0 = n => Array.from({ length: n }, (_, i) => 'Port' + i);
+const hostS = (k, o) => ({ f: (m, x, y, S) => new DevicePC(k, m, x, y, S), cl: 'h', ...o });
+const srvS = o => ({ f: (m, x, y, S) => new DeviceServer(m, x, y, S), cl: 'h', ic: 'server', nics: ['FastEthernet0'], ...o });
+const rtS = (ports, o) => ({ f: (m, x, y, S) => new DeviceRouter(m, x, y, S), cl: 'r', ic: 'router', ports, ...o });
+const swS = (ports, o) => ({ f: (m, x, y, S) => new DeviceSwitch(m, x, y, S), cl: 's', ic: 'switch', ports, ...o });
+const hubS = (ports, o) => ({ f: (m, x, y, S) => new DeviceHub(m, x, y, S), cl: 's', ports, ...o });
+const apS = (ports, o) => ({ f: (m, x, y, S) => new DeviceAP(m, x, y, S), cl: 'h', ic: 'ap', ports, ...o });
+const wrS = (o) => ({ f: (m, x, y, S) => new DeviceWRouter(m, x, y, S), cl: 's', ic: 'wrouter', lan: ['Ethernet1', 'Ethernet2', 'Ethernet3', 'Ethernet4'], ...o });
+const g3 = n => Array.from({ length: n }, (_, i) => `GigabitEthernet1/0/${i + 1}`);
+const SPEC = {
+  /* routers */
+  '4331': rtS(['GigabitEthernet0/0/0', 'GigabitEthernet0/0/1', 'GigabitEthernet0/0/2']), '4321': rtS(['GigabitEthernet0/0/0', 'GigabitEthernet0/0/1']),
+  '1941': rtS(gi(2, 0)), '2901': rtS(gi(2, 0)), '2911': rtS(gi(3, 0)),
+  '819IOX': rtS(['FastEthernet0', 'FastEthernet1', 'FastEthernet2', 'FastEthernet3', 'GigabitEthernet0']), '819HGW': rtS(['FastEthernet0', 'FastEthernet1', 'FastEthernet2', 'FastEthernet3', 'GigabitEthernet0']),
+  '829': rtS(['GigabitEthernet0', 'GigabitEthernet1', 'FastEthernet0', 'FastEthernet1']), '1240': rtS(['FastEthernet0/0', 'FastEthernet0/1']),
+  'PT-Router': rtS(['FastEthernet0/0', 'FastEthernet0/1', 'FastEthernet1/0']), 'Router-PT': rtS(['FastEthernet0/0', 'FastEthernet0/1', 'FastEthernet1/0']), 'PT-Empty': rtS(['FastEthernet0/0', 'FastEthernet0/1']),
+  '1841': rtS(['FastEthernet0/0', 'FastEthernet0/1']), '2620XM': rtS(['FastEthernet0/0']), '2621XM': rtS(['FastEthernet0/0', 'FastEthernet0/1']), '2811': rtS(['FastEthernet0/0', 'FastEthernet0/1']),
+  /* switches */
+  '2960-24TT': swS([...fa(24), ...gi(2)]), 'PT-Switch': swS(fa(8)), 'Switch-PT': swS(fa(8)), 'Switch-24': swS(fa(24)), 'PT-Empty-SW': swS([...fa(8), ...gi(2)], { label: 'PT-Empty' }),
+  '3560-24PS': swS([...fa(24), ...gi(2)], { ic: 'l3switch', l3: true }), '3650-24PS': swS([...g3(24), 'GigabitEthernet1/1/1', 'GigabitEthernet1/1/2', 'GigabitEthernet1/1/3', 'GigabitEthernet1/1/4'], { ic: 'l3switch', l3: true }),
+  'IE-2000': swS([...fa(8), ...gi(2)]), 'PT-Bridge': swS(['Port0', 'Port1'], { ic: 'bridge', cli: false }), '2950-24': swS(fa(24)), '2950T': swS([...fa(24), ...gi(2)]),
+  /* hubs & passive */
+  'PT-Hub': hubS(P0(10), { ic: 'hub', pre: 'Hub' }), 'PT-Repeater': hubS(P0(2), { ic: 'repeater', pre: 'Repeater', k: 'hub' }), 'Coaxial-Splitter': hubS(COAX(3), { ic: 'splitter', pre: 'Splitter', k: 'hub', label: 'Coaxial Splitter' }),
+  /* WAN emulation */
+  'PT-Cloud': hubS(['Ethernet0', 'Ethernet1', 'Ethernet2', 'Ethernet3', ...COAX(2), ['Modem0', { media: 'phone' }], ['Modem1', { media: 'phone' }]], { ic: 'cloud', pre: 'Cloud', k: 'cloud' }),
+  'PT-Empty-Cloud': hubS(['Ethernet0', 'Ethernet1', 'Ethernet2', 'Ethernet3'], { ic: 'cloud', pre: 'Cloud', k: 'cloud', label: 'PT-Empty' }),
+  'DSL-Modem': hubS([['Port0', { media: 'phone' }], 'Port1'], { ic: 'modem', pre: 'Modem', k: 'modem', label: 'DSL Modem' }), 'Cable-Modem': hubS([['Port0', { media: 'coax' }], 'Port1'], { ic: 'modem', pre: 'Modem', k: 'modem', label: 'Cable Modem' }),
+  /* security */
+  '5506': { f: (m, x, y, S) => new DeviceASA(m, x, y, S), cl: 'r', ic: 'asa', ports: Array.from({ length: 8 }, (_, i) => 'GigabitEthernet1/' + (i + 1)), pre: 'ASA' },
+  '5505': { f: (m, x, y, S) => new DeviceASA(m, x, y, S), cl: 'r', ic: 'asa', ports: Array.from({ length: 8 }, (_, i) => 'Ethernet0/' + i), pre: 'ASA' },
+  /* wireless */
+  'AP-PT': apS(P0(2), { pre: 'AccessPoint', range: 200 }), 'AP-PT-A': apS(P0(2), { pre: 'AccessPoint', range: 180 }), 'AP-PT-AC': apS(P0(2), { pre: 'AccessPoint', range: 230 }), 'AP-PT-N': apS(P0(2), { pre: 'AccessPoint', range: 260 }),
+  'Meraki': apS(['Ethernet0', 'Ethernet1'], { pre: 'Meraki', range: 240 }), 'LAP-PT': apS(['GigabitEthernet0'], { pre: 'LAP', lw: true, range: 220 }), '3702I': apS(['GigabitEthernet0'], { pre: 'LAP', lw: true, range: 240 }),
+  'Cell-Tower': apS([...COAX(1), 'Ethernet0'], { ic: 'tower', pre: 'CellTower', radio: 'cell', range: 600, label: 'Cell Tower' }),
+  'WLC-PT': { f: (m, x, y, S) => new DeviceWLC(m, x, y, S), cl: 'h', ic: 'wlc', ports: ['Management', 'GigabitEthernet1', 'GigabitEthernet2'], pre: 'WLC', label: 'WLC' },
+  '3504': { f: (m, x, y, S) => new DeviceWLC(m, x, y, S), cl: 'h', ic: 'wlc', ports: ['Management', 'GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet3', 'GigabitEthernet4'], pre: 'WLC' },
+  '2504': { f: (m, x, y, S) => new DeviceWLC(m, x, y, S), cl: 'h', ic: 'wlc', ports: ['Management', 'GigabitEthernet1', 'GigabitEthernet2', 'GigabitEthernet3', 'GigabitEthernet4'], pre: 'WLC' },
+  'Home-Router': wrS({ pre: 'HomeRouter', label: 'Home Router' }), 'WRT300N': wrS({ pre: 'WRT300N', range: 230 }), 'Home-Gateway': wrS({ pre: 'HomeGateway', label: 'Home Gateway' }),
+  'CO-Server': srvS({ ic: 'server', pre: 'COServer', web: 'Central Office Server', label: 'CO Server' }),
+  /* end devices */
+  'PC-PT': hostS('pc', { ic: 'pc', nics: ['FastEthernet0'] }), 'Laptop-PT': hostS('laptop', { ic: 'laptop', nics: ['FastEthernet0', WL] }), 'Server-PT': srvS({ pre: undefined }),
+  'Meraki-Server': srvS({ pre: 'MerakiServer', web: 'Meraki Cloud Server', label: 'Meraki Server' }), 'Network-Controller': srvS({ pre: 'NetworkController', web: 'Network Controller', label: 'Network Controller' }),
+  'Printer-PT': hostS('printer', { ic: 'printer', nics: ['FastEthernet0'], rs: false, pre: 'Printer', web: 'Printer status: Ready', label: 'Printer' }),
+  'IPPhone-PT': { f: (m, x, y, S) => new DeviceIPPhone(m, x, y, S), cl: 's', ic: 'ipphone', pre: 'IPPhone', label: 'IP Phone' },
+  'VoIP-PT': hostS('voip', { ic: 'voip', nics: ['Ethernet0', ['Phone0', { pass: true, media: 'phone' }]], rs: false, pre: 'VoIP', label: 'VoIP Device' }),
+  'Phone-PT': { f: (m, x, y, S) => new DeviceDumb(m, x, y, S), cl: 'h', ic: 'phone', ports: [['Line0', { media: 'phone' }]], pre: 'Phone', label: 'Phone' },
+  'TV-PT': hostS('tv', { ic: 'tv', nics: ['FastEthernet0'], rs: false, pre: 'TV', label: 'TV' }), 'Tablet-PT': hostS('tablet', { ic: 'tablet', nics: [WL, CEL], rs: false, pre: 'Tablet', label: 'Tablet' }),
+  'SmartPhone-PT': hostS('smartphone', { ic: 'smartphone', nics: [WL, CEL], rs: false, pre: 'SmartPhone', label: 'Smart Phone' }),
+  'Generic-Wireless': hostS('generic', { ic: 'generic', nics: [WL], rs: false, pre: 'Wireless', label: 'Generic Wireless' }), 'Generic-Wired': hostS('generic', { ic: 'generic', nics: ['FastEthernet0'], rs: false, pre: 'Wired', label: 'Generic Wired' }),
+  'Sniffer-PT': hostS('sniffer', { ic: 'sniffer', nics: ['FastEthernet0'], rs: false, pre: 'Sniffer', label: 'Sniffer' }),
+  /* components */
+  'MCU-Board': hostS('board', { ic: 'board', nics: ['FastEthernet0'], rs: false, pre: 'MCU', label: 'MCU Board' }), 'SBC-Board': hostS('board', { ic: 'board', nics: ['FastEthernet0', WL], rs: false, pre: 'SBC', label: 'SBC Board' }),
+  'Thing-PT': hostS('thing', { ic: 'thing', nics: ['FastEthernet0', WL], rs: false, pre: 'Thing', label: 'Thing' })
+};
+const KIND_DEFAULT = { pc: 'PC-PT', laptop: 'Laptop-PT', server: 'Server-PT', switch: '2960-24TT', router: 'Router-PT' };
+
+/* ───────── IOS CLI ───────── */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], MON3 = MONTHS.map(m => m.slice(0, 3)), DAY3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const iosPrompt = n => n.name + ({ user: '>', priv: '#', conf: '(config)#', if: '(config-if)#', line: '(config-line)#' })[n.mode];
+const ASKP = { dest: 'Destination filename [startup-config]? ', erase: 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]', reload: 'Proceed with reload? [confirm]' };
+const conPrompt = n => n.sess === 'idle' || n.bannerIn ? '' : n.ask ? (ASKP[n.ask.t] || 'Password: ') : iosPrompt(n);
+const conSecret = n => !!(n.ask && (n.ask.t === 'en' || n.ask.t === 'con'));
+const newCfg = () => ({ enable: null, secret: null, encrypt: false, banner: '', con: { pw: null, login: false }, vty: { pw: null, login: true } });
+function initIos(n) { n.cfg = newCfg(); n.startup = null; n.sess = null; n.ask = null; n.bannerIn = null; n.line = 'con'; n.clk = { off: Date.UTC(1993, 2, 1) - Date.now(), set: false }; }
+const XL = 'dsfd;kfoA,.iyewrkldJKDHSUBsgvca69834ncxv9873254k;fg87';
+const t7 = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 16; return String(h).padStart(2, '0') + [...s].map((ch, i) => (ch.charCodeAt(0) ^ XL.charCodeAt((h + i) % 53)).toString(16).toUpperCase().padStart(2, '0')).join(''); };
+const md5ish = s => { let a = 5381, b = 52711; for (const ch of s) { a = (a * 33 ^ ch.charCodeAt(0)) >>> 0; b = (b * 33 ^ ch.charCodeAt(0)) >>> 0; } return '$1$mERr$' + (a.toString(36) + b.toString(36) + 'Zk9QnWdE3xPaTv').slice(0, 22); };
+const pwShow = o => o.enc ? '7 ' + t7(o.v) : o.v;
+function findPort(n, s) {
+  const m = /^(fastethernet|fa|f|gigabitethernet|gig|gi|g)(\d+(?:\/\d+)+)$/.exec(s.replace(/\s+/g, '').toLowerCase()); if (!m) return null;
+  const t = m[1][0] === 'f' ? 'fastethernet' : 'gigabitethernet'; return n.ports.find(p => p.name.toLowerCase() === t + m[2]);
+}
+const netOf = (ip, m) => n2ip((ip2n(ip) & ip2n(m)) >>> 0);
+const goodMask = m => { const v = ip2n(m); if (v === null) return false; const i = ~v >>> 0; return (i & (i + 1)) === 0; };
+const snap = n => JSON.parse(JSON.stringify({ name: n.name, kind: n.kind, cfg: n.cfg, routes: n.routes || [], svi: n.svi && { ip: n.svi.ip, mask: n.svi.mask, admin: n.svi.admin }, ports: n.ports.filter(p => !p.con).map(p => ({ name: p.name, ip: p.ip, mask: p.mask, admin: p.admin, desc: p.desc || '', spd: p.spd || '', dpx: p.dpx || '', nameif: p.nameif || '', sec: p.sec })) }));
+function applySnap(n, s) {
+  n.name = s.name; n.cfg = Object.assign(newCfg(), JSON.parse(JSON.stringify(s.cfg))); n.routes = JSON.parse(JSON.stringify(s.routes || []));
+  if (s.svi && n.svi) Object.assign(n.svi, s.svi);
+  n.ports.filter(p => !p.con).forEach((p, i) => { const q = s.ports[i]; if (!q) return; p.ip = q.ip || ''; p.mask = q.mask || ''; p.admin = q.admin !== false; p.desc = q.desc || ''; p.spd = q.spd || ''; p.dpx = q.dpx || ''; if (n.kind === 'asa') { p.nameif = q.nameif || ''; p.sec = q.sec || 0; } });
+  if (W.n === n) $('#wn').textContent = n.name; E.need();
+}
+function factoryReset(n) {
+  const R = n.kind === 'router' || n.kind === 'asa'; n.name = R ? (n.kind === 'asa' ? 'ASA' : 'Router') : 'Switch'; n.cfg = newCfg(); n.routes = n.routes ? [] : n.routes;
+  if (n.svi) { n.svi.ip = ''; n.svi.mask = ''; n.svi.admin = false; }
+  n.ports.filter(p => !p.con).forEach((p, i) => { p.ip = ''; p.mask = ''; p.admin = !R; p.desc = ''; p.spd = ''; p.dpx = ''; if (n.kind === 'asa') { p.nameif = i === 0 ? 'outside' : i === 1 ? 'inside' : ''; p.sec = i === 1 ? 100 : 0; } });
+  if (W.n === n) $('#wn').textContent = n.name; E.need();
+}
+function renderCfg(s) {
+  const c = s.cfg, L = ['!', 'version 15.0', (c.encrypt ? '' : 'no ') + 'service password-encryption', '!', 'hostname ' + s.name, '!'];
+  if (c.secret) L.push('enable secret 5 ' + md5ish(c.secret.v)); if (c.enable) L.push('enable password ' + pwShow(c.enable)); if (c.secret || c.enable) L.push('!');
+  const ifc = (nm, o, w) => { L.push('interface ' + nm); if (o.desc) L.push(' description ' + o.desc); if (o.nameif) L.push(' nameif ' + o.nameif, ' security-level ' + o.sec); if (o.spd) L.push(' speed ' + o.spd); if (o.dpx) L.push(' duplex ' + o.dpx); if (w) L.push(o.ip ? ` ip address ${o.ip} ${o.mask}` : ' no ip address'); if (!o.admin) L.push(' shutdown'); L.push('!'); };
+  s.ports.forEach(p => ifc(p.name, p, s.kind === 'router' || s.kind === 'asa')); if (s.svi) ifc('Vlan1', s.svi, true);
+  s.routes.forEach(r => L.push(s.kind === 'asa' ? `route ${((s.ports.find(p => p.nameif && p.ip && same(p.ip, r.nh, p.mask)) || {}).nameif) || 'outside'} ${r.net} ${r.mask} ${r.nh}` : `ip route ${r.net} ${r.mask} ${r.nh}`)); if (s.routes.length) L.push('!');
+  if (c.banner) L.push(`banner motd ^C${c.banner}^C`, '!');
+  const ln = (h, o) => { L.push(h); if (o.pw) L.push(' password ' + pwShow(o.pw)); if (o.login) L.push(' login'); L.push('!'); };
+  ln('line con 0', c.con); ln('line vty 0 4', c.vty); L.push('end'); return L.join('\n') + '\n';
+}
+const fmtClock = n => { const d = new Date(Date.now() + n.clk.off), z = (v, l = 2) => String(v).padStart(l, '0'); return `${n.clk.set ? '' : '*'}${z(d.getUTCHours())}:${z(d.getUTCMinutes())}:${z(d.getUTCSeconds())}.${z(d.getUTCMilliseconds(), 3)} UTC ${DAY3[d.getUTCDay()]} ${MON3[d.getUTCMonth()]} ${d.getUTCDate()} ${d.getUTCFullYear()}`; };
+function clockSet(x) {
+  const { n, a, inv, inc } = x, t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(a[2] || '');
+  if (!a[2]) return inc(); if (!t || +t[1] > 23 || +t[2] > 59 || +(t[3] || 0) > 59) return inv(); if (a.length < 6) return inc();
+  const df = /^\d+$/.test(a[3]), d = +(df ? a[3] : a[4]), ms = (df ? a[4] : a[3]).toLowerCase(), mo = ms.length < 3 ? -1 : MONTHS.findIndex(m => m.toLowerCase().startsWith(ms)), y = +a[5];
+  const t0 = Date.UTC(y, mo, d, +t[1], +t[2], +(t[3] || 0));
+  if (mo < 0 || !(d >= 1) || !(y >= 1993 && y <= 2035) || new Date(t0).getUTCDate() !== d) return inv();
+  n.clk.off = t0 - Date.now(); n.clk.set = true;
+}
+function connectText(n) { const c = n.cfg; let s = c.banner ? '\n' + c.banner + '\n\n' : ''; if (c.con.login && c.con.pw) { n.sess = 'auth'; n.ask = { t: 'con', tries: 0 }; s += 'User Access Verification\n\n'; } else n.sess = 'ok'; return s; }
+const logout = (n, out) => { n.mode = 'user'; n.sess = 'idle'; out(`\n\n\n${n.name} con0 is now available\n\n\n\n\nPress RETURN to get started.\n\n`); };
+function consoleClose(d) { if (!d || !d.cfg) return; d.sess = null; d.ask = null; d.bannerIn = null; if (d.cfg.con.login && d.cfg.con.pw) d.mode = 'user'; }
+function openConsole(n, box, pre = '') {
+  W.dev = n; let h = pre + 'Press RETURN to get started!\n\n' + (n.kind === 'asa' ? 'Cisco Adaptive Security Appliance Software, ASA ' + n.model : n.kind === 'router' ? `Cisco IOS Software, ${n.model} Software` : `Cisco Catalyst ${n.model} Software`) + '\n\n';
+  if (n.sess !== 'ok') h += connectText(n);
+  term(box, h, () => conPrompt(n), (l, o) => iosExec(n, l, o), () => conSecret(n));
+}
+function askExec(n, line, out) {
+  const A = n.ask, c = n.cfg;
+  if (A.t === 'dest') { n.ask = null; n.startup = snap(n); return out('Building configuration...\n[OK]\n'); }
+  if (A.t === 'erase') { n.ask = null; if (/^n/i.test(line.trim())) return; n.startup = null; return out('[OK]\nErase of nvram: complete\n'); }
+  if (A.t === 'reload') {
+    n.ask = null; if (/^n/i.test(line.trim())) return;
+    if (n.startup) applySnap(n, n.startup); else factoryReset(n);
+    n.reset(); n.mac && (n.mac = {}); n.mode = 'user'; n.cur = null; n.bannerIn = null; n.sess = 'idle';
+    out('\nSystem Bootstrap, Version 15.0\nReloading...\n\nPress RETURN to get started!\n\n'); E.need(); return;
+  }
+  if (A.t === 'en') { const want = c.secret || c.enable; if (want && line === want.v) { n.ask = null; n.mode = 'priv'; return; } if (++A.tries >= 3) { n.ask = null; out(`% Bad ${c.secret ? 'secrets' : 'passwords'}\n`); } return; }
+  if (c.con.pw && line === c.con.pw.v) { n.ask = null; n.sess = 'ok'; return; }
+  if (++A.tries >= 3) out('\n% Bad passwords\n' + connectText(n));
+}
+const sMsg = (n, p, up, out) => {
+  if (p.svi) { if (up && !n.ports.some(q => !q.con && q.ok)) return; out(`%LINK-5-CHANGED: Interface ${p.name}, changed state to ${up ? 'up' : 'administratively down'}\n%LINEPROTO-5-UPDOWN: Line protocol on Interface ${p.name}, changed state to ${up ? 'up' : 'down'}\n`); }
+  else out(`%LINK-5-CHANGED: Interface ${p.name}, changed state to ${up ? 'up' : 'administratively down'}\n`);
+};
+/* ── IOS-style parser: every keyword may be abbreviated to a unique prefix ── */
+const tokz = line => { const r = [], re = /\S+/g; let m; while ((m = re.exec(line))) r.push({ t: m[0], i: m.index }); return r; };
+const NS_MSG = '% This command is recognized by IOS but is not supported in this simulator.\n';
+const G = (names, u) => names.split(' ').map(k => ({ k, ghost: 1, u: u ? 1 : 0 }));
+const filterU = kids => kids.filter(k => k.u).map(k => k.kids ? { ...k, kids: filterU(k.kids) } : k);
+function walk(kids, toks) {
+  const root = kids; let cur = { kids }, i = 0, no = false;
+  for (;;) {
+    if (cur.ghost) return { ok: cur, args: toks.slice(i), all: toks, no };
+    if (i >= toks.length) return cur.run && (!cur.p || cur.p.opt || (no && !cur.p.must)) ? { ok: cur, args: [], all: toks, no } : { st: 'inc', at: i, all: toks };
+    if (cur.p) return { ok: cur, args: toks.slice(i), all: toks, no };
+    if (!cur.kids) return { st: 'inv', at: i, all: toks };
+    const w = toks[i].t.toLowerCase(), cand = cur.kids.filter(k => k.k.startsWith(w));
+    if (!cand.length) return { st: 'inv', at: i, all: toks };
+    const pick = cand.find(k => k.k === w) || (cand.length === 1 ? cand[0] : null);
+    if (!pick) return { st: 'amb', at: i, all: toks };
+    if (pick.k === 'do') return i + 1 < toks.length ? { st: 'do', rest: toks.slice(i + 1) } : { st: 'inc', at: i + 1, all: toks };
+    if (pick.neg) { no = true; cur = { kids: root.filter(k => !k.nono && !k.neg) }; i++; continue; }
+    cur = pick; i++;
+  }
+}
+function resolve(T, kids, toks) { const r = walk(kids, toks); return r.st === 'do' ? walk(T.priv, r.rest) : r; }
+const badAddr = (ip, mask) => { const a = ip2n(ip), m = ip2n(mask), h = ~m >>> 0; return h > 1 && ((a & h) === 0 || (a & h) === h); };
+function iosTree(n) {
+  const A = n.kind === 'asa', R = n.kind === 'router' || A, c = n.cfg, cp = n.cur, N = (k, o) => ({ k, ...o }), LN = () => n.line === 'con' ? c.con : c.vty;
+  const exitCmd = x => n.mode === 'user' || n.mode === 'priv' ? logout(n, x.out) : x.inv();
+  const enterConf = x => { if (n.mode !== 'priv') return x.inv(); n.mode = 'conf'; x.out('Enter configuration commands, one per line.  End with CNTL/Z.\n'); };
+  const showRun = x => { const s = renderCfg(snap(n)); x.out(`Building configuration...\n\nCurrent configuration : ${s.length} bytes\n${s}`); };
+  const showStart = x => { if (!n.startup) return x.out('startup-config is not present\n'); const s = renderCfg(n.startup); x.out(`Using ${s.length} out of 65536 bytes\n${s}`); };
+  const wr = x => { n.startup = snap(n); x.out('Building configuration...\n[OK]\n'); };
+  const eraseCmd = () => { n.ask = { t: 'erase' }; };
+  const reloadCmd = x => { if (n.mode !== 'priv') return x.inv(); n.ask = { t: 'reload' }; };
+  const mt = (w, full) => !!w && full.startsWith(w.toLowerCase());
+  const copyCmd = x => {
+    const [s, d, e] = x.args; if (!s) return x.inc();
+    if (!mt(s, 'running-config') && !mt(s, 'startup-config')) return x.inv(0);
+    if (!d) return x.inc(); if (e) return x.inv(2);
+    if (mt(s, 'running-config') && mt(d, 'startup-config')) { n.ask = { t: 'dest' }; return; }
+    if (mt(s, 'startup-config') && mt(d, 'running-config')) { if (!n.startup) return x.out('%Error opening nvram:/startup-config (No such file or directory)\n'); applySnap(n, n.startup); return x.out('Destination filename [running-config]? \n[OK]\n'); }
+    if (mt(d, 'running-config') || mt(d, 'startup-config')) return x.out('% Source and destination must be different.\n');
+    return x.inv(1);
+  };
+  const pingCmd = x => { if (x.args.length > 1) return x.inv(1); if (ip2n(x.args[0]) === null) return x.out('% Unrecognized host or address, or protocol not running.\n'); return n.ping(x.args[0], x.out); };
+  const ipBrief = x => {
+    x.out('Interface              IP-Address      OK? Method Status                Protocol\n');
+    const row = (nm, ip, adm, up) => x.out(`${nm.padEnd(22)} ${(ip || 'unassigned').padEnd(15)} YES ${ip ? 'manual' : 'unset '} ${(!adm ? 'administratively down' : up ? 'up' : 'down').padEnd(21)} ${adm && up ? 'up' : 'down'}\n`);
+    if (n.svi) row('Vlan1', n.svi.ip, n.svi.admin, n.ports.some(q => !q.con && q.ok));
+    n.ports.filter(p => !p.con).forEach(p => row(p.name, p.ip, p.admin, p.ok));
+  };
+  const ipRouteShow = x => {
+    x.out('Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP\n\nGateway of last resort is not set\n\n');
+    n.ports.forEach(p => p.ip && p.ok && x.out(`C    ${netOf(p.ip, p.mask)}/${m2p(p.mask)} is directly connected, ${p.name}\n`));
+    n.routes.forEach(r => x.out(`S    ${r.net}/${m2p(r.mask)} [1/0] via ${r.nh}\n`));
+  };
+  const macTbl = x => {
+    x.out('          Mac Address Table\n-------------------------------------------\n\nVlan    Mac Address       Type        Ports\n----    -----------       --------    -----\n');
+    Object.entries(n.mac).forEach(([m, p]) => x.out(`   1    ${m.toLowerCase().padEnd(17)} DYNAMIC     ${ab(p.name)}\n`));
+  };
+  const host = x => {
+    if (x.no) n.name = R ? 'Router' : 'Switch';
+    else if (x.args.length > 1 || !/^[\w.-]+$/.test(x.args[0])) return x.out('% Hostname contains one or more illegal characters.\n');
+    else n.name = x.args[0];
+    if (W.n === n) $('#wn').textContent = n.name; E.need();
+  };
+  const enSet = f => x => { if (x.no) { c[f] = null; return; } let a = x.args; if (a.length > 1 && a[0] === '0') a = a.slice(1); c[f] = { v: a.join(' '), enc: f === 'enable' && c.encrypt }; };
+  const svcEnc = x => { c.encrypt = !x.no; if (!x.no) [c.enable, c.con.pw, c.vty.pw].forEach(o => o && (o.enc = true)); };
+  const banner = x => {
+    if (x.no) { c.banner = ''; return; }
+    const d = x.argRaw[0], rest = x.argRaw.slice(1), i = rest.indexOf(d);
+    if (i >= 0) c.banner = rest.slice(0, i); else { n.bannerIn = { d, lines: rest ? [rest] : [] }; x.out(`Enter TEXT message.  End with the character '${d}'.\n`); }
+  };
+  const lineCon = x => { if (x.args.length > 1) return x.inv(1); if (x.args[0] !== '0') return x.inv(0); n.line = 'con'; n.mode = 'line'; };
+  const lineVty = x => { const a = x.args; if (a.length > 2) return x.inv(2); if (!/^\d+$/.test(a[0]) || +a[0] > 15) return x.inv(0); if (a[1] !== undefined && (!/^\d+$/.test(a[1]) || +a[1] > 15 || +a[1] < +a[0])) return x.inv(1); n.line = 'vty'; n.mode = 'line'; };
+  const intf = x => {
+    const a = x.args;
+    if (a[0].length > 1 && 'range'.startsWith(a[0].toLowerCase())) return x.out('% "interface range" is not supported in this simulator.\n');
+    const m = /^([a-z]+)(\d+(?:\/\d+)*)$/.exec(a.join('').toLowerCase()); if (!m) return x.inv(0);
+    const T = ['fastethernet', 'gigabitethernet', 'ethernet', 'vlan'].filter(t => t.startsWith(m[1])); if (T.length !== 1) return x.inv(0);
+    if (T[0] === 'vlan') { if (n.kind !== 'switch' || m[2].includes('/')) return x.inv(0); if (+m[2] !== 1) return x.out('% Only VLAN 1 is supported in this simulator.\n'); n.cur = n.svi; n.mode = 'if'; return; }
+    const p = n.ports.find(q => !q.con && q.name.toLowerCase() === T[0] + m[2]); if (!p) return x.inv(a.length > 1 ? 1 : 0); n.cur = p; n.mode = 'if';
+  };
+  const ipRoute = x => {
+    const a = x.args, need = x.no ? 2 : 3; if (a.length < need) return x.inc(); if (a.length > 3) return x.inv(3);
+    const bad = a.findIndex(v => ip2n(v) === null); if (bad >= 0) return x.inv(bad); if (!goodMask(a[1])) return x.inv(1);
+    if (x.no) n.routes = n.routes.filter(r => !(r.net === a[0] && r.mask === a[1] && (!a[2] || r.nh === a[2]))); else { n.routes.push({ net: a[0], mask: a[1], nh: a[2] }); E.need(); }
+  };
+  const ipAddr = x => {
+    const p = cp, a = x.args;
+    if (x.no) { p.ip = p.mask = ''; E.need(); return; }
+    if (a.length < 2) return x.inc(); if (a.length > 2) return x.inv(2);
+    if (ip2n(a[0]) === null) return x.inv(0); if (!goodMask(a[1])) return x.inv(1);
+    if (badAddr(a[0], a[1])) return x.out(`Bad mask /${m2p(a[1])} for address ${a[0]}\n`);
+    p.ip = a[0]; p.mask = a[1]; E.need();
+  };
+  const shut = x => { const p = cp; if (p.admin === x.no) return; setAdmin(p, x.no); sMsg(n, p, x.no, x.out); };
+  const desc = x => { cp.desc = x.no ? '' : x.args.join(' '); };
+  const speedCmd = x => { if (x.no) { cp.spd = ''; return; } const v = x.args[0].toLowerCase(); if (x.args.length > 1) return x.inv(1); if (!['auto', '10', '100', '1000'].includes(v)) return x.inv(0); cp.spd = v; };
+  const duplexCmd = x => { if (x.no) { cp.dpx = ''; return; } const v = x.args[0].toLowerCase(); if (x.args.length > 1) return x.inv(1); if (!['auto', 'full', 'half'].includes(v)) return x.inv(0); cp.dpx = v; };
+  const lpw = x => {
+    const L = LN(); if (x.no) { L.pw = null; return; }
+    let a = x.args; if (a.length > 1 && a[0] === '0') a = a.slice(1); L.pw = { v: a.join(' '), enc: c.encrypt };
+    if (!L.login && n.line === 'con') x.out("% Note: 'login' is not set on line con 0, so this password will NOT be asked. Type 'login' to enable it.\n");
+  };
+  const llogin = x => { const L = LN(); L.login = !x.no; if (!x.no && !L.pw && n.line === 'con') x.out("% Login disabled on line 0, until 'password' is set\n"); };
+  const asaRoute = x => {
+    const a = x.args, need = x.no ? 3 : 4; if (a.length < need) return x.inc(); if (a.length > 4) return x.inv(4);
+    if (!n.ports.some(p => p.nameif && p.nameif.toLowerCase() === a[0].toLowerCase())) return x.inv(0);
+    for (let i = 1; i < a.length; i++) if (ip2n(a[i]) === null) return x.inv(i); if (!goodMask(a[2])) return x.inv(2);
+    if (x.no) n.routes = n.routes.filter(r => !(r.net === a[1] && r.mask === a[2] && (!a[3] || r.nh === a[3]))); else { n.routes.push({ net: a[1], mask: a[2], nh: a[3] }); E.need(); }
+  };
+  const nameif = x => { if (x.no) { cp.nameif = ''; return; } cp.nameif = x.args[0]; const l = cp.nameif.toLowerCase(); cp.sec = l === 'inside' ? 100 : l === 'outside' ? 0 : (cp.sec || 0); };
+  const secLevel = x => { if (x.args.length > 1 || !/^\d+$/.test(x.args[0]) || +x.args[0] > 100) return x.inv(0); cp.sec = +x.args[0]; };
+  const skip = () => {};
+  const common = up => [N('end', { nono: 1, run: () => { n.mode = 'priv'; } }), N('do', { nono: 1 }), N('no', { neg: 1 }), N('exit', { nono: 1, run: () => { n.mode = up; } })];
+
+  const priv = [
+    N('enable', { u: 1, run: x => { if (n.mode === 'user') { if (c.secret || c.enable) n.ask = { t: 'en', tries: 0 }; else n.mode = 'priv'; } } }),
+    N('disable', { run: () => { if (n.mode === 'priv') n.mode = 'user'; } }),
+    N('exit', { u: 1, run: exitCmd }), N('logout', { u: 1, run: exitCmd }),
+    N('configure', { run: enterConf, kids: [N('terminal', { run: enterConf }), ...G('memory network')] }),
+    N('clock', { kids: [N('set', { p: {}, run: x => clockSet(x) })] }),
+    N('copy', { p: {}, run: copyCmd }),
+    N('write', { run: wr, kids: [N('memory', { run: wr }), N('terminal', { run: showRun }), N('erase', { run: eraseCmd }), ...G('network')] }),
+    N('ping', { u: 1, p: {}, run: pingCmd }),
+    N('show', { u: 1, kids: [
+      N('clock', { u: 1, run: x => x.out(fmtClock(n) + '\n') }),
+      N('running-config', { run: showRun }), N('startup-config', { run: showStart }),
+      N('ip', { u: 1, kids: [
+        N('interface', { u: 1, run: x => x.out('% Only "show ip interface brief" is supported in this simulator.\n'), kids: [N('brief', { u: 1, run: ipBrief })] }),
+        ...(R ? [N('route', { u: 1, run: ipRouteShow })] : []), ...G('arp protocols dhcp ospf eigrp nat cef', 1)] }),
+      ...(R ? [] : [N('mac', { u: 1, kids: [N('address-table', { u: 1, run: macTbl })] }), N('mac-address-table', { u: 1, run: macTbl })]),
+      ...(A ? [N('interface', { u: 1, kids: [N('ip', { u: 1, kids: [N('brief', { u: 1, run: ipBrief })] })] })] : []),
+      ...G('version vlan interfaces flash history cdp spanning-tree arp users sessions protocols terminal privilege logging controllers', 1)] }),
+    N('erase', { kids: [N('startup-config', { run: eraseCmd }), ...G('flash nvram')] }), N('reload', { run: reloadCmd }),
+    ...G('archive debug delete dir format more send setup test undebug verify vlan', 0),
+    ...G('clear connect disconnect help lock login name-connection resume ssh telnet terminal traceroute tunnel where', 1)
+  ];
+  const conf = [
+    N('hostname', { p: {}, run: host }),
+    N('enable', { kids: [N('password', { p: {}, run: enSet('enable') }), N('secret', { p: {}, run: enSet('secret') }), ...G('use-tacacs')] }),
+    N('banner', { kids: [N('motd', { p: {}, run: banner }), ...G('login exec incoming')] }),
+    N('service', { kids: [N('password-encryption', { run: svcEnc }), ...G('timestamps pad tcp-keepalives-in tcp-keepalives-out')] }),
+    N('line', { nono: 1, kids: [N('console', { p: { must: 1 }, run: lineCon }), N('vty', { p: { must: 1 }, run: lineVty }), ...G('aux')] }),
+    N('interface', { nono: 1, p: {}, run: intf }),
+    ...(A ? [N('route', { p: { must: 1 }, run: asaRoute })] : []),
+    N('ip', { kids: [...(R && !A ? [N('route', { p: { must: 1 }, run: ipRoute })] : []), ...G('domain-name default-gateway dhcp domain-lookup name-server routing classless http ssh')] }),
+    ...common('priv'),
+    ...G('aaa access-list alias arp boot cdp class-map clock crypto default errdisable ipv6 lldp logging login mac monitor ntp policy-map privilege snmp-server spanning-tree username vlan vtp' + (R ? ' router' : ''))
+  ];
+  const ifm = [
+    N('ip', { kids: [...(R || (cp && cp.svi) ? [N('address', { p: {}, run: ipAddr })] : []), ...G('access-group helper-address nat ospf dhcp proxy-arp directed-broadcast')] }),
+    N('shutdown', { run: shut }), N('description', { p: { opt: 1 }, run: desc }),
+    N('speed', { p: {}, run: speedCmd }), N('duplex', { p: {}, run: duplexCmd }),
+    ...(A ? [N('nameif', { p: {}, run: nameif }), N('security-level', { p: {}, run: secLevel })] : []),
+    ...common('conf'),
+    ...G('mtu bandwidth cdp load-interval spanning-tree channel-group mls delay' + (R ? '' : ' switchport'))
+  ];
+  const lnm = [
+    N('password', { p: {}, run: lpw }), N('login', { run: llogin, kids: G('local authentication') }),
+    N('logging', { p: { opt: 1 }, run: skip }), N('exec-timeout', { p: { opt: 1 }, run: skip }), N('transport', { p: { opt: 1 }, run: skip }),
+    ...common('conf'),
+    ...G('privilege access-class history length width escape-character')
+  ];
+  return { priv, conf, if: ifm, line: lnm };
+}
+async function iosExec(n, line, out) {
+  if (n.sess === 'idle') return out(connectText(n));
+  if (n.ask) return askExec(n, line, out);
+  if (n.bannerIn) { const B = n.bannerIn, i = line.indexOf(B.d); if (i < 0) B.lines.push(line); else { if (i) B.lines.push(line.slice(0, i)); n.cfg.banner = B.lines.join('\n'); n.bannerIn = null; } return; }
+  const toks = tokz(line); if (!toks.length) return;
+  const m = n.mode, T = iosTree(n), pl = iosPrompt(n).length, caret = t => out(' '.repeat(pl + t.i) + "^\n% Invalid input detected at '^' marker.\n\n");
+  let r = resolve(T, m === 'user' ? filterU(T.priv) : m === 'priv' ? T.priv : T[m], toks);
+  if (r.st === 'inv' && (m === 'if' || m === 'line')) { const g = resolve(T, T.conf, toks); if (g.ok || (g.st && g.all === toks && (g.at > r.at || (g.at === r.at && g.st === 'amb')))) r = g; }
+  if (!r.ok) {
+    if (r.st === 'amb') return out(`% Ambiguous command:  "${line.trim()}"\n`);
+    if (r.st === 'inc') return out('% Incomplete command.\n');
+    return caret(r.all[r.at]);
+  }
+  if (r.ok.ghost) return out(NS_MSG);
+  const x = { n, out, raw: line, a: r.all.map(t => t.t), args: r.args.map(t => t.t), no: r.no, argRaw: r.args.length ? line.slice(r.args[0].i) : '',
+    inv: (k = 0) => caret(r.args[k] || r.all[r.all.length - 1]), inc: () => out('% Incomplete command.\n') };
+  await r.ok.run(x);
+}
+function setAdmin(p, v) { p.admin = v; if (v && p.n.kind === 'switch' && !p.svi) p.amber = performance.now() + 2500; E.need(); }
+
+/* ───────── Engine ───────── */
+class NetworkEngine {
+  constructor() {
+    this.cv = $('#cv'); this.c = this.cv.getContext('2d');
+    this.nodes = []; this.cables = []; this.notes = []; this.q = []; this.now = 0; this.mode = 'rt'; this.playing = false;
+    this.anims = []; this.pool = []; this.evs = []; this.pdus = [];
+    this.cx = 0; this.cy = 0; this.z = 1; this.tool = 'sel'; this.place = null; this.cab = null; this.raf = 0; this.drag = null; this.ptrs = new Map(); this.sel = null; this.draining = false; this.rect = null; this.fling = null; this.epoch = 0; this.filter = { ICMP: true, ARP: true, DHCP: true, DNS: true, HTTP: true };
+    this.dpr = Math.min(devicePixelRatio || 1, 2);
+    this.resize(); addEventListener('resize', () => this.resize()); addEventListener('orientationchange', () => setTimeout(() => this.resize(), 250)); if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe($('#main'));
+    this.bindInput();
+  }
+  resize() { const r = this.cv.getBoundingClientRect(); this.rect = r; this.W = r.width; this.H = r.height; this.cv.width = r.width * this.dpr; this.cv.height = r.height * this.dpr; this.need(); }
+  sched(dt, fn, info) { if (this.q.length > 30000) { this.q.length = 0; toast('Broadcast storm: a network loop was detected - events dropped'); return; } const t = this.now + dt; let i = this.q.length; while (i && this.q[i - 1].t > t) i--; this.q.splice(i, 0, { t, fn, info }); if (this.mode === 'sim') this.need(); }
+  tx(p, k) { if (!p.ok) return; const to = p.peer, c = k.clone(); c.hops = (k.hops || 0) + 1; if (c.hops > 48) return; this.sched(1, () => to.n.rx(to, c), { from: p.n, to: to.n, pkt: c }); }
+  pump() { if (this.mode !== 'rt' || this.draining) return; this.draining = true; try { while (this.q.length) { const ev = this.q.shift(); this.now = ev.t; ev.fn(); } } finally { this.draining = false; } this.need(); }
+  step() {
+    if (!this.q.length) return false; const t = this.q[0].t; let vis = false;
+    while (this.q.length && this.q[0].t === t) { const ev = this.q.shift(); this.now = t; if (ev.info && this.mode === 'sim') { if (this.startAnim(ev)) vis = true; } else ev.fn(); }
+    this.need(); return vis || this.step();
+  }
+  finishAnims() { const A = this.anims; this.anims = []; A.forEach(a => { a.ev.fn(); this.pool.push(a); }); }
+  startAnim(ev) {
+    { const ft = ev.info.pkt.type === 'TCP' ? 'HTTP' : ev.info.pkt.type; if (this.filter[ft] === false) { ev.fn(); return false; } }
+    const a = this.pool.pop() || {}; a.ev = ev; a.t0 = performance.now(); a.dur = 650; this.anims.push(a);
+    const k = ev.info.pkt; this.evs.push({ t: this.now, from: ev.info.from, to: ev.info.to, pkt: k }); if (this.evs.length > 300) this.evs.shift(); addEvRow(this.evs.length - 1); return true;
+  }
+  resetSim() { this.q = []; this.anims = []; this.now = 0; this.evs = []; $('#evb').innerHTML = ''; $('#evd').textContent = 'Tap an event to inspect its OSI layers.'; this.epoch++; this.nodes.forEach(n => { n.reset(); if (n.inbox) n.inbox = []; }); this.need(); }
+  setMode(m) { this.mode = m; if (m === 'rt') { this.playing = false; this.anims.forEach(a => { a.ev.fn(); }); this.anims = []; this.pump(); } $('#m-rt').classList.toggle('on', m === 'rt'); $('#m-sim').classList.toggle('on', m === 'sim'); $('#d-play').style.display = $('#d-step').style.display = $('#d-rst').style.display = m === 'sim' ? '' : 'none'; $('#dt').textContent = m === 'sim' ? 'Simulation Panel' : 'PDU List'; showDockTab(m === 'sim' ? 'ev' : 'pdu'); this.need(); }
+  need() { if (!this.raf) this.raf = requestAnimationFrame(() => this.frame()); }
+  frame() {
+    this.raf = 0; const t = performance.now(); let more = false;
+    for (let i = this.anims.length - 1; i >= 0; i--) { const a = this.anims[i]; if (t - a.t0 >= a.dur) { this.anims.splice(i, 1); a.ev.fn(); this.pool.push(a); } }
+    if (this.fling) { const f = this.fling, dt = Math.min(34, t - f.t); f.t = t; this.cx += f.vx * dt; this.cy += f.vy * dt; const k = Math.pow(.93, dt / 16); f.vx *= k; f.vy *= k; if (Math.hypot(f.vx, f.vy) < .02) this.fling = null; else more = true; }
+    if (this.playing && !this.anims.length && this.q.length) this.step();
+    this.draw(t);
+    if (this.anims.length || (this.playing && this.q.length) || this.nodes.some(n => n.ports.some(p => p.amber > t) || (n.bubble && n.bubble.until > t))) more = true;
+    if (more) this.need();
+  }
+  /* ── geometry ── */
+  w2s(x, y) { return [x * this.z + this.cx, y * this.z + this.cy]; }
+  s2w(x, y) { return [(x - this.cx) / this.z, (y - this.cy) / this.z]; }
+  nodeAt(x, y) { for (let i = this.nodes.length - 1; i >= 0; i--) { const n = this.nodes[i]; if (Math.abs(x - n.x) < 42 && y > n.y - 42 && y < n.y + 66) return n; } return null; }
+  cableAt(x, y) {
+    const tol = 9 / this.z;
+    for (const c of this.cables) { const a = c.a.n, b = c.b.n, dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1; let t = ((x - a.x) * dx + (y - a.y) * dy) / l2; t = Math.max(0, Math.min(1, t)); if (Math.hypot(x - a.x - t * dx, y - a.y - t * dy) < tol) return c; }
+    return null;
+  }
+  /* ── drawing ── */
+  draw(now) {
+    const c = this.c, d = this.dpr, z = this.z; c.imageSmoothingQuality = 'high';
+    c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#ebe8ee'; c.fillRect(0, 0, this.cv.width, this.cv.height);
+    c.setTransform(d * z, 0, 0, d * z, d * this.cx, d * this.cy);
+    const x0 = -this.cx / z, y0 = -this.cy / z, x1 = x0 + this.W / z, y1 = y0 + this.H / z;
+    c.strokeStyle = 'rgba(0,0,0,.05)'; c.lineWidth = 1 / z; c.beginPath();
+    for (let x = Math.floor(x0 / 40) * 40; x < x1; x += 40) { c.moveTo(x, y0); c.lineTo(x, y1); }
+    for (let y = Math.floor(y0 / 40) * 40; y < y1; y += 40) { c.moveTo(x0, y); c.lineTo(x1, y); }
+    c.stroke();
+    for (const nt of this.notes) { c.font = '12px system-ui'; const L = nt.text.split('\n'), w = Math.max(...L.map(s => c.measureText(s).width)) + 16, h = L.length * 15 + 12; c.fillStyle = '#fff3a8'; c.strokeStyle = '#c9b200'; c.lineWidth = 1 / z; c.fillRect(nt.x, nt.y, w, h); c.strokeRect(nt.x, nt.y, w, h); c.fillStyle = '#332'; c.textAlign = 'left'; L.forEach((s, i) => c.fillText(s, nt.x + 8, nt.y + 18 + i * 15)); }
+    for (const k of this.cables) {
+      const a = k.a.n, b = k.b.n; if (k.type === 'wifi') { c.strokeStyle = '#3b9ae1'; c.lineWidth = 1.6; c.setLineDash([3, 6]); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]); continue; } c.strokeStyle = ({ console: '#29b6f6', coax: '#2f6fd6', phone: '#777' })[k.type] || '#222'; c.lineWidth = 2; c.setLineDash(k.type === 'cross' ? [8, 5] : k.type === 'phone' ? [2, 4] : []); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); c.setLineDash([]);
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, o = Math.min(52, len * .3) / len;
+      [[k.a, a, b], [k.b, b, a]].forEach(([p, f, g]) => { c.fillStyle = k.type === 'console' ? '#29b6f6' : p.amber > now ? '#ffae00' : p.ok ? '#2ecc40' : '#ff3b30'; c.beginPath(); c.arc(f.x + (g.x - f.x) * o, f.y + (g.y - f.y) * o, 5, 0, 7); c.lineWidth = 1.2; c.strokeStyle = '#fff'; c.stroke(); c.fill(); });
+    }
+    for (const n of this.nodes) {
+      if (n.x < x0 - 80 || n.x > x1 + 80 || n.y < y0 - 80 || n.y > y1 + 100) continue;
+      if (!n.on) c.globalAlpha = .45;
+      const f = 1.25 / 3; c.drawImage(iconBmp(n.ic), n.x - 112 * f, n.y - 118 * f, 224 * f, 224 * f);
+      if (this.drag && this.drag.moved && this.drag.n === n) { c.strokeStyle = 'rgba(23,181,234,.7)'; c.lineWidth = 2; c.setLineDash([5, 4]); c.beginPath(); c.arc(n.x, n.y, 46, 0, 7); c.stroke(); c.setLineDash([]); }
+      if (this.cab && this.cab.node === n) { c.strokeStyle = '#17b5ea'; c.lineWidth = 2; c.beginPath(); c.arc(n.x, n.y, 44, 0, 7); c.stroke(); }
+      c.textAlign = 'center'; c.lineWidth = 3.5; c.strokeStyle = 'rgba(235,232,238,.96)'; c.font = '10px system-ui'; c.strokeText(n.model, n.x, n.y + 46); c.fillStyle = '#4a5878'; c.fillText(n.model, n.x, n.y + 46); c.font = '700 12px system-ui'; c.strokeText(n.name, n.x, n.y + 60); c.fillStyle = '#17233f'; c.fillText(n.name, n.x, n.y + 60); c.globalAlpha = 1;
+      if (n.bubble && n.bubble.until > now) { const b = n.bubble; c.globalAlpha = Math.min(1, (b.until - now) / 500); c.font = '600 12px system-ui'; const tx = b.text.length > 28 ? b.text.slice(0, 27) + '…' : b.text, w = c.measureText(tx).width + 18, bx = n.x - w / 2, by = n.y - 78; c.fillStyle = b.col; c.beginPath(); c.roundRect(bx, by, w, 26, 9); c.fill(); c.beginPath(); c.moveTo(n.x - 6, by + 26); c.lineTo(n.x, by + 34); c.lineTo(n.x + 6, by + 26); c.fill(); c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(tx, n.x, by + 17); c.globalAlpha = 1; }
+    }
+    for (const a of this.anims) {
+      const i = a.ev.info, p = Math.min(1, (now - a.t0) / a.dur), e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2, x = i.from.x + (i.to.x - i.from.x) * e, y = i.from.y + (i.to.y - i.from.y) * e;
+      c.fillStyle = COL[i.pkt.type] || '#888'; c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); c.roundRect(x - 9, y - 6.5, 18, 13, 2); c.fill(); c.stroke(); c.beginPath(); c.moveTo(x - 9, y - 6.5); c.lineTo(x, y + 1); c.lineTo(x + 9, y - 6.5); c.stroke();
+    }
+  }
+  /* ── input ── */
+  bindInput() {
+    const cv = this.cv; let pinch = null;
+    const down = (id, x, y, type, primary) => {
+      if (primary) { this.ptrs.clear(); pinch = null; }
+      hideTip(); this.fling = null; this.rect = cv.getBoundingClientRect(); this.ptrs.set(id, [x, y]);
+      if (this.ptrs.size >= 2) { this.drag = null; const [a, b] = [...this.ptrs.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 }; return; }
+      const r = this.rect, [wx, wy] = this.s2w(x - r.left, y - r.top), n = this.tool === 'sel' ? this.nodeAt(wx, wy) : null;
+      if (n) { this.nodes.splice(this.nodes.indexOf(n), 1); this.nodes.push(n); }
+      this.drag = { n, sx: x, sy: y, ox: n ? wx - n.x : 0, oy: n ? wy - n.y : 0, cx: this.cx, cy: this.cy, moved: false, th: type === 'mouse' ? 4 : 9, lx: x, ly: y, lt: performance.now(), vx: 0, vy: 0 };
+    };
+    const move = (id, x, y) => {
+      if (!this.ptrs.has(id)) return; this.ptrs.set(id, [x, y]);
+      if (this.ptrs.size >= 2) {
+        if (!pinch) return;
+        const [a, b] = [...this.ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, r = this.rect;
+        this.cx += mx - pinch.mx; this.cy += my - pinch.my; this.zoomAt(mx - r.left, my - r.top, this.z * d / pinch.d); pinch = { d, mx, my }; return;
+      }
+      const g = this.drag; if (!g) return;
+      if (!g.moved && Math.hypot(x - g.sx, y - g.sy) > g.th) g.moved = true;
+      if (!g.moved) return;
+      const r = this.rect;
+      if (g.n) { const [wx, wy] = this.s2w(x - r.left, y - r.top); g.n.x = wx - g.ox; g.n.y = wy - g.oy; }
+      else { const t = performance.now(), dt = Math.max(1, t - g.lt); g.vx = .75 * g.vx + .25 * (x - g.lx) / dt; g.vy = .75 * g.vy + .25 * (y - g.ly) / dt; g.lx = x; g.ly = y; g.lt = t; this.cx = g.cx + x - g.sx; this.cy = g.cy + y - g.sy; }
+      this.need();
+    };
+    const up = (id, x, y, cancel) => {
+      if (!this.ptrs.delete(id)) return;
+      const g = this.drag, left = this.ptrs.size;
+      if (left < 2) pinch = null;
+      if (left === 1) { const [rx, ry] = [...this.ptrs.values()][0]; this.drag = { n: null, sx: rx, sy: ry, cx: this.cx, cy: this.cy, moved: true, th: 0, lx: rx, ly: ry, lt: performance.now(), vx: 0, vy: 0 }; return; }
+      if (left === 0 && g) {
+        if (!g.moved && !cancel) { const r = this.rect; this.tap(...this.s2w(x - r.left, y - r.top), x - r.left, y - r.top); }
+        else if (g.moved && !g.n && !cancel && performance.now() - g.lt < 90 && Math.hypot(g.vx, g.vy) > .25) { this.fling = { vx: g.vx, vy: g.vy, t: performance.now() }; this.need(); }
+      }
+      if (g && g.moved && g.n) wifiSync();
+      this.drag = null;
+    };
+    const hover = (x, y) => { if (this.tool !== 'sel' && this.tool !== 'insp') return; const r = this.rect || cv.getBoundingClientRect(), [wx, wy] = this.s2w(x - r.left, y - r.top), n = this.nodeAt(wx, wy); n ? showTip(n, x - r.left, y - r.top) : hideTip(); };
+    const reset = () => { this.ptrs.clear(); this.drag = null; pinch = null; };
+    if (window.PointerEvent) {
+      cv.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; try { cv.setPointerCapture(e.pointerId); } catch (_) {} down(e.pointerId, e.clientX, e.clientY, e.pointerType, e.isPrimary); });
+      cv.addEventListener('pointermove', e => { if (this.ptrs.has(e.pointerId)) move(e.pointerId, e.clientX, e.clientY); else if (e.pointerType === 'mouse') hover(e.clientX, e.clientY); });
+      cv.addEventListener('pointerup', e => up(e.pointerId, e.clientX, e.clientY, false));
+      cv.addEventListener('pointercancel', e => up(e.pointerId, e.clientX, e.clientY, true));
+      cv.addEventListener('lostpointercapture', e => up(e.pointerId, e.clientX, e.clientY, true));
+    } else {
+      const each = (e, f) => { e.preventDefault(); for (const t of e.changedTouches) f(t.identifier, t.clientX, t.clientY, e.touches.length === e.changedTouches.length); };
+      cv.addEventListener('touchstart', e => each(e, (i, x, y, pr) => down(i, x, y, 'touch', pr)), { passive: false });
+      cv.addEventListener('touchmove', e => each(e, move), { passive: false });
+      cv.addEventListener('touchend', e => each(e, (i, x, y) => up(i, x, y, false)), { passive: false });
+      cv.addEventListener('touchcancel', e => each(e, (i, x, y) => up(i, x, y, true)), { passive: false });
+      cv.addEventListener('mousedown', e => { if (e.button === 0) down('m', e.clientX, e.clientY, 'mouse', true); });
+      addEventListener('mousemove', e => { if (this.ptrs.has('m')) move('m', e.clientX, e.clientY); else if (e.target === cv) hover(e.clientX, e.clientY); });
+      addEventListener('mouseup', e => up('m', e.clientX, e.clientY, false));
+    }
+    addEventListener('blur', reset); document.addEventListener('visibilitychange', reset);
+    cv.addEventListener('contextmenu', e => e.preventDefault());
+    cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); this.zoomAt(e.clientX - r.left, e.clientY - r.top, this.z * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015))); }, { passive: false });
+  }
+  zoomAt(mx, my, nz) { nz = Math.max(.3, Math.min(3, nz)); this.cx = mx - (mx - this.cx) * nz / this.z; this.cy = my - (my - this.cy) * nz / this.z; this.z = nz; this.need(); }
+  tap(wx, wy, sx, sy) {
+    const n = this.nodeAt(wx, wy), t = this.tool;
+    if (this.place) { const [k, m] = this.place; mk(k, m, wx, wy); this.place = null; hint(''); setTool('sel'); return; }
+    if (t === 'sel') { if (n) openDev(n); return; }
+    if (t === 'insp') { if (n) showTip(n, sx, sy); return; }
+    if (t === 'del') { if (n) delNode(n); else { const k = this.cableAt(wx, wy); if (k) { delCable(k); wifiSync(); } else { const i = this.notes.findIndex(o => wx > o.x && wx < o.x + 160 && wy > o.y && wy < o.y + 60); if (i >= 0) this.notes.splice(i, 1); } } this.need(); return; }
+    if (t === 'note') { if (!n) ask('Note text', '', v => { if (v) { this.notes.push({ x: wx, y: wy, text: v }); this.need(); } }); return; }
+    if (t === 'pdu') {
+      if (!n || !n.host) return toast('Pick a PC/Laptop/Server');
+      if (!this.cab) { this.cab = { node: n }; hint('Now tap the destination device'); this.need(); return; }
+      const s = this.cab.node; this.cab = null; hint(''); if (s !== n) sendPdu(s, n); this.need(); return;
+    }
+    if (t === 'msg') {
+      if (!n || !n.host) return toast('Pick a PC / Laptop / Server');
+      if (!this.cab) { this.cab = { node: n }; hint('Now tap the RECEIVER device'); this.need(); return; }
+      const s = this.cab.node; this.cab = null; hint(''); this.need(); if (s === n) return;
+      ask(`Message from ${s.name} to ${n.name}`, 'Hello', v => sendMsg(s, n, v || 'Hello')); return;
+    }
+    if (t.startsWith('cable')) { if (n) cableTap(n, t.slice(6)); }
+  }
+}
+const E = new NetworkEngine();
+
+/* ───────── Icons ───────── */
+const ICA = { generic: 'pc', sniffer: 'laptop', ipphone: 'phone', voip: 'modem', repeater: 'hub', splitter: 'hub', thing: 'board', bridge: 'switch' };
+function drawIcon(c, kind, x, y, s) {
+  kind = ICA[kind] || kind; c.save(); c.translate(x, y); c.scale(s, s); c.lineJoin = 'round'; c.lineCap = 'round';
+  const lg = (y0, y1, a, b, m) => { const g = c.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, a); if (m) g.addColorStop(.5, m); g.addColorStop(1, b); return g; };
+  const ED = '#0b4a73', P = (pts, f, st = true) => { c.beginPath(); pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.closePath(); c.fillStyle = f; c.fill(); if (st) { c.strokeStyle = ED; c.lineWidth = 1.3; c.stroke(); } };
+  const RR = (a, b, w, h, r, f, st = true) => { c.beginPath(); c.roundRect(a, b, w, h, r); c.fillStyle = f; c.fill(); if (st) { c.strokeStyle = ED; c.lineWidth = 1.3; c.stroke(); } };
+  const sh = (rx, ry, yy) => { c.fillStyle = 'rgba(20,40,70,.18)'; c.beginPath(); c.ellipse(0, yy, rx, ry, 0, 0, 7); c.fill(); };
+  const led = (a, b, col) => { c.fillStyle = col; c.beginPath(); c.arc(a, b, 1.5, 0, 7); c.fill(); };
+  if (kind === 'pc') {
+    sh(26, 5, 22);
+    RR(-22, -28, 44, 33, 4, lg(-28, 5, '#a9e6fd', '#2c86bd'));
+    RR(-18, -24, 36, 25, 2, lg(-24, 1, '#f2fdff', '#8bd0ee'), false);
+    c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.moveTo(-18, -24); c.lineTo(-2, -24); c.lineTo(-14, 1); c.lineTo(-18, 1); c.fill();
+    P([[-6, 5], [6, 5], [10, 13], [-10, 13]], lg(5, 13, '#7fcbec', '#2c86bd'));
+    RR(-18, 13, 36, 6, 3, lg(13, 19, '#9fe0fa', '#2c86bd'));
+    led(16, 1, '#37d44a');
+  } else if (kind === 'laptop') {
+    sh(30, 5, 22);
+    RR(-19, -28, 38, 28, 4, lg(-28, 0, '#a9e6fd', '#2c86bd'));
+    RR(-15, -24, 30, 20, 2, lg(-24, -4, '#f2fdff', '#8bd0ee'), false);
+    c.fillStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.moveTo(-15, -24); c.lineTo(0, -24); c.lineTo(-10, -4); c.lineTo(-15, -4); c.fill();
+    P([[-17, 0], [17, 0], [27, 15], [-27, 15]], lg(0, 15, '#8fd8f6', '#2c86bd'));
+    c.strokeStyle = 'rgba(11,74,115,.55)'; c.lineWidth = 1; for (let r = 0; r < 3; r++) { const yy = 3.5 + r * 3.6, k = r * 1.6; c.beginPath(); c.moveTo(-14 - k, yy); c.lineTo(14 + k, yy); c.stroke(); }
+    RR(-6, 11, 12, 2.6, 1.3, '#0b4a73', false);
+  } else if (kind === 'server') {
+    sh(22, 5, 30);
+    RR(-17, -32, 34, 62, 4, lg(-32, 30, '#9fe3fb', '#1f78ad'));
+    P([[17, -32], [24, -27], [24, 25], [17, 30]], lg(-27, 25, '#2c86bd', '#0f5a86'));
+    for (let i = 0; i < 4; i++) { RR(-13, -27 + i * 11, 26, 8, 2, lg(-27, -19, '#e8fbff', '#9ad7f0'), false); c.strokeStyle = ED; c.lineWidth = .8; c.strokeRect(-13, -27 + i * 11, 26, 8); led(9, -23 + i * 11, i < 3 ? '#37d44a' : '#ffb020'); c.fillStyle = 'rgba(11,74,115,.45)'; c.fillRect(-10, -24 + i * 11, 12, 1.6); }
+    RR(-8, 19, 16, 5, 2, '#0b4a73', false); led(-4, 21.5, '#37d44a');
+  } else if (kind === 'switch' || kind === 'l3switch') {
+    sh(34, 7, 20);
+    P([[-34, -6], [0, -22], [34, -6], [0, 10]], lg(-22, 10, '#c9f1ff', '#7fcbec'));
+    P([[-34, -6], [0, 10], [0, 24], [-34, 8]], lg(-6, 24, '#4aa5d6', '#1b6fa3'));
+    P([[0, 10], [34, -6], [34, 8], [0, 24]], lg(-6, 24, '#2e86bb', '#13608f'));
+    for (let i = 0; i < 8; i++) { const t = i / 8, px = -30 + t * 28, py = -3 + t * 14 + 2; P([[px, py], [px + 2.8, py + 1.2], [px + 2.8, py + 5], [px, py + 3.8]], '#0a3552', false); led(px + 1.4, py - .4 + 8.4, i % 3 ? '#37d44a' : '#ffb020'); }
+    c.strokeStyle = '#fff'; c.lineWidth = 1.7; c.beginPath(); c.moveTo(-14, -6); c.lineTo(10, -6); c.moveTo(5, -10); c.lineTo(10, -6); c.lineTo(5, -2); c.moveTo(14, -3); c.lineTo(-10, -3); c.moveTo(-5, 1); c.lineTo(-10, -3); c.lineTo(-5, -7); c.stroke();
+    if (kind === 'l3switch') { RR(8, -31, 26, 13, 4, '#ff9f0a'); c.fillStyle = '#17233f'; c.font = '700 10px system-ui'; c.textAlign = 'center'; c.fillText('L3', 21, -21); }
+  } else if (kind === 'hub') {
+    sh(30, 6, 18); RR(-30, -12, 60, 24, 4, lg(-12, 12, '#a9e6fd', '#2c86bd'));
+    for (let i = 0; i < 6; i++) { RR(-24 + i * 9, -3, 6, 9, 1, '#0a3552', false); led(-21 + i * 9, -7, i % 2 ? '#37d44a' : '#ffb020'); }
+  } else if (kind === 'ap' || kind === 'wlc') {
+    sh(28, 6, 22); RR(-26, 2, 52, 18, 6, lg(2, 20, '#d8f5ff', '#2c86bd')); c.strokeStyle = ED; c.lineWidth = 2.2;
+    for (let r = 1; r <= 3; r++) { c.beginPath(); c.arc(0, -2, r * 8, -2.35, -.79); c.stroke(); } c.fillStyle = ED; c.beginPath(); c.arc(0, -2, 2.6, 0, 7); c.fill(); led(18, 11, '#37d44a'); led(10, 11, '#ffb020');
+    if (kind === 'wlc') { c.fillStyle = '#ff9f0a'; RR(-26, -32, 22, 11, 3, '#ff9f0a'); c.fillStyle = '#17233f'; c.font = '700 8px system-ui'; c.textAlign = 'center'; c.fillText('WLC', -15, -24); }
+  } else if (kind === 'wrouter') {
+    sh(30, 7, 22); RR(-30, 0, 60, 20, 5, lg(0, 20, '#9fe3fb', '#1f78ad')); c.strokeStyle = ED; c.lineWidth = 3; c.beginPath(); c.moveTo(-20, 0); c.lineTo(-24, -24); c.moveTo(20, 0); c.lineTo(24, -24); c.stroke();
+    for (let i = 0; i < 5; i++) led(-16 + i * 8, 10, i % 2 ? '#37d44a' : '#ffb020');
+  } else if (kind === 'asa') {
+    sh(32, 6, 20); RR(-32, -14, 64, 32, 3, lg(-14, 18, '#f7c27a', '#c46a00')); c.strokeStyle = 'rgba(90,40,0,.6)'; c.lineWidth = 1;
+    for (let r = 0; r < 3; r++) { const yy = -14 + (r + 1) * 8; c.beginPath(); c.moveTo(-32, yy); c.lineTo(32, yy); c.stroke(); for (let q = 0; q < 4; q++) { const xx = -32 + (q + (r % 2) * .5 + .5) * 16; c.beginPath(); c.moveTo(xx, yy - 8); c.lineTo(xx, yy); c.stroke(); } }
+  } else if (kind === 'modem') {
+    sh(28, 6, 16); RR(-28, -8, 56, 20, 4, lg(-8, 12, '#d8f5ff', '#2c86bd')); led(-18, 2, '#37d44a'); led(-10, 2, '#ffb020'); led(-2, 2, '#37d44a'); c.strokeStyle = ED; c.lineWidth = 2; c.beginPath(); c.moveTo(18, -8); c.lineTo(18, -20); c.stroke();
+  } else if (kind === 'cloud') {
+    sh(30, 5, 22); const cc = [[-14, 4, 11], [-2, -6, 14], [12, -1, 12], [0, 7, 11]];
+    c.fillStyle = ED; c.beginPath(); cc.forEach(([a, b, r]) => { c.moveTo(a + r + 1.6, b); c.arc(a, b, r + 1.6, 0, 7); }); c.fill();
+    c.fillStyle = lg(-20, 18, '#f2fdff', '#7fcbec'); c.beginPath(); cc.forEach(([a, b, r]) => { c.moveTo(a + r, b); c.arc(a, b, r, 0, 7); }); c.fill();
+  } else if (kind === 'phone') {
+    sh(22, 5, 22); RR(-18, 0, 36, 22, 4, lg(0, 22, '#9fe3fb', '#1f78ad')); RR(-22, -10, 44, 9, 4, lg(-10, -1, '#c9f1ff', '#2c86bd'));
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) { c.fillStyle = '#e8fbff'; c.beginPath(); c.arc(-8 + q * 8, 5 + r * 5, 1.8, 0, 7); c.fill(); }
+  } else if (kind === 'printer') {
+    sh(28, 5, 20); RR(-14, -22, 28, 16, 2, '#fff'); RR(-26, -8, 52, 24, 5, lg(-8, 16, '#9fe3fb', '#1f78ad')); RR(-18, 8, 36, 5, 1, '#0a3552', false); led(18, -2, '#37d44a');
+  } else if (kind === 'tv') {
+    sh(28, 5, 24); RR(-30, -26, 60, 38, 3, lg(-26, 12, '#2c86bd', '#0f5a86')); RR(-26, -22, 52, 30, 2, lg(-22, 8, '#f2fdff', '#8bd0ee'), false); RR(-12, 14, 24, 5, 2, '#2c86bd');
+  } else if (kind === 'tablet' || kind === 'smartphone') {
+    const w = kind === 'tablet' ? 32 : 22, h = kind === 'tablet' ? 46 : 48; sh(w / 2 + 6, 4, h / 2 - 2); RR(-w / 2, -h / 2 - 4, w, h, 5, lg(-h / 2, h / 2, '#9fe3fb', '#1f78ad')); RR(-w / 2 + 3, -h / 2 + 1, w - 6, h - 12, 2, lg(-h / 2, h / 2, '#f2fdff', '#8bd0ee'), false); led(0, h / 2 - 4, '#37d44a');
+  } else if (kind === 'board') {
+    sh(28, 5, 20); RR(-28, -18, 56, 38, 3, '#2f9d6a'); RR(-10, -8, 20, 16, 2, '#1b3a2c'); c.strokeStyle = '#d9c36a'; c.lineWidth = 1.4; for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(-22 + i * 9, -18); c.lineTo(-22 + i * 9, -12); c.moveTo(-22 + i * 9, 20); c.lineTo(-22 + i * 9, 14); c.stroke(); }
+  } else if (kind === 'tower') {
+    sh(22, 5, 24); c.strokeStyle = ED; c.lineWidth = 3; c.beginPath(); c.moveTo(-16, 24); c.lineTo(0, -16); c.lineTo(16, 24); c.moveTo(-9, 8); c.lineTo(9, 8); c.moveTo(-5, -2); c.lineTo(5, -2); c.stroke();
+    c.lineWidth = 2; for (let r = 1; r <= 2; r++) { c.beginPath(); c.arc(0, -18, r * 8, -2.35, -.79); c.stroke(); } c.fillStyle = '#ff3b30'; c.beginPath(); c.arc(0, -18, 3, 0, 7); c.fill();
+  } else {
+    sh(30, 7, 22);
+    c.beginPath(); c.ellipse(0, 10, 28, 11, 0, 0, Math.PI); c.lineTo(-28, -8); c.lineTo(28, -8); c.lineTo(28, 10); c.closePath();
+    const g = c.createLinearGradient(-28, 0, 28, 0); g.addColorStop(0, '#1b6fa3'); g.addColorStop(.35, '#6cc4ea'); g.addColorStop(.7, '#2e86bb'); g.addColorStop(1, '#13608f'); c.fillStyle = g; c.fill(); c.strokeStyle = ED; c.lineWidth = 1.3; c.stroke();
+    c.beginPath(); c.ellipse(0, -8, 28, 11, 0, 0, 7); c.fillStyle = lg(-19, 3, '#d8f5ff', '#7fcbec'); c.fill(); c.stroke();
+    c.strokeStyle = '#0b4a73'; c.lineWidth = 2.2; c.beginPath(); c.moveTo(-15, -8); c.lineTo(15, -8); c.moveTo(0, -14.5); c.lineTo(0, -1.5); c.moveTo(10.5, -11.5); c.lineTo(15, -8); c.lineTo(10.5, -4.5); c.moveTo(-10.5, -11.5); c.lineTo(-15, -8); c.lineTo(-10.5, -4.5); c.moveTo(-3.5, -12); c.lineTo(0, -14.5); c.lineTo(3.5, -12); c.moveTo(-3.5, -4); c.lineTo(0, -1.5); c.lineTo(3.5, -4); c.stroke();
+    led(-18, 12, '#37d44a'); led(-12, 13, '#37d44a'); led(-6, 13.6, '#ffb020');
+  }
+  c.restore();
+}
+const bmp = {};
+function iconBmp(k) { if (bmp[k]) return bmp[k]; const cv = document.createElement('canvas'); cv.width = cv.height = 224; drawIcon(cv.getContext('2d'), k, 112, 118, 3); return bmp[k] = cv; }
+const iconCache = {};
+function iconURL(kind) { if (iconCache[kind]) return iconCache[kind]; const cv = document.createElement('canvas'); cv.width = 192; cv.height = 152; const c = cv.getContext('2d'); drawIcon(c, kind, 96, 80, 2.7); return iconCache[kind] = cv.toDataURL(); }
+
+/* ───────── Helpers: toast, hint, tip ───────── */
+const buzz = () => { try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(10); } catch (_) {} };
+let tt; const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2600); };
+const hint = m => { const h = $('#hint'); h.textContent = m; h.classList.toggle('on', !!m); };
+function showTip(n, x, y) {
+  let s = `Device Name: ${n.name}\nDevice Model: ${n.model}\n`;
+  if (n.host) { const p = n.p; s += `Port            Link  IP Address       MAC Address\n${p.name.padEnd(15)} ${(p.ok ? 'Up' : 'Down').padEnd(5)} ${(p.ip || '<not set>').padEnd(16)} ${p.mac}\nGateway: ${n.gw || '<not set>'}\nDNS Server: ${n.dns || '<not set>'}\n`; const a = Object.entries(n.arp); if (a.length) s += 'ARP: ' + a.map(([i, m]) => `${i}=${m}`).join(', ') + '\n'; }
+  else { n.ports.filter(p => (p.cab || p.ip) && !p.con).forEach(p => { s += `${ab(p.name).padEnd(8)} ${(p.ok ? 'Up' : 'Down').padEnd(5)} ${(p.ip || '').padEnd(15)} ${p.mac}\n`; }); if (n.svi && n.mac) s += `Vlan1 ${n.svi.ip || '<not set>'}\nMAC table: ${Object.keys(n.mac).length} entries\n`; else if (n.routes) s += `Routes: ${n.ports.filter(p => p.ip && p.ok).length} connected, ${n.routes.length} static\n`; }
+  const t = $('#tip'); t.textContent = s.trimEnd(); t.style.display = 'block'; t.style.left = Math.min(x + 12, E.W - 260) + 'px'; t.style.top = Math.min(y + 12, E.H - 110) + 'px';
+}
+const hideTip = () => { $('#tip').style.display = 'none'; };
+
+/* ───────── Topology ops ───────── */
+function mk(kind, model, x, y) {
+  const S = SPEC[model] || SPEC[KIND_DEFAULT[kind]], n = S.f(model, x, y, S); n.ic = S.ic || n.kind; n.cl = S.cl; n.spec = S;
+  E.nodes.push(n); wifiSync(); E.need(); return n;
+}
+function delNode(n) { E.cables.filter(k => k.a.n === n || k.b.n === n).forEach(delCable); E.nodes.splice(E.nodes.indexOf(n), 1); wifiSync(); E.need(); }
+function delCable(k) { k.a.peer = k.b.peer = null; k.a.cab = k.b.cab = null; E.cables.splice(E.cables.indexOf(k), 1); E.nodes.forEach(n => n.mac && (n.mac = {})); E.need(); }
+const cls = n => n.cl || (n.host ? 'h' : n.kind === 'switch' ? 's' : 'r');
+function connect(pa, pb, type, quiet) {
+  if (pa.n === pb.n) return toast('Cannot connect a device to itself');
+  if (pa.cab || pb.cab) return toast('Port already in use');
+  if (type === 'console' || pa.con || pa.rs || pb.con || pb.rs) {
+    if (type !== 'console') return toast('Console/RS232 ports need a Console cable');
+    if (!((pa.con && pb.rs) || (pa.rs && pb.con))) return toast('Console cable: connect a PC RS232 port to a switch/router Console port');
+    const k = { a: pa, b: pb, type: 'console', ok: true }; pa.cab = pb.cab = k; pa.peer = pb; pb.peer = pa; E.cables.push(k); if (!quiet) buzz(); E.need(); return k;
+  }
+  if (pa.air || pb.air) return toast('Wireless interfaces connect automatically - set the SSID in the Config tab');
+  if (pa.media !== pb.media) return toast(`Incompatible ports: ${pa.media} <-> ${pb.media}`);
+  if (pa.media !== 'eth') { const t = type === 'auto' ? pa.media : type; if (t !== pa.media) return toast(`This link needs a ${pa.media === 'coax' ? 'Coaxial' : 'Phone'} cable`); const k = { a: pa, b: pb, type: t, ok: true }; pa.cab = pb.cab = k; pa.peer = pb; pb.peer = pa; E.cables.push(k); if (!quiet) buzz(); wifiSync(); E.need(); return k; }
+  if (type === 'coax' || type === 'phone') return toast('Coaxial/Phone cables only fit coax/phone ports');
+  const A = cls(pa.n), B = cls(pb.n), swsw = A === 's' && B === 's', cross = !swsw && A === B || (A === 'h' && B === 'r') || (A === 'r' && B === 'h');
+  const ideal = cross ? 'cross' : 'straight', t = type === 'auto' ? ideal : type, ok = swsw || t === ideal;
+  const k = { a: pa, b: pb, type: t, ok }; pa.cab = pb.cab = k; pa.peer = pb; pb.peer = pa; E.cables.push(k); if (!quiet) buzz();
+  [pa, pb].forEach(p => { if (p.n.kind === 'switch') p.amber = performance.now() + 2500; });
+  if (!ok && !quiet) toast(`Wrong cable: ${cross ? 'Crossover' : 'Straight-Through'} is required between these devices — link is down`);
+  [pa, pb].forEach(p => { if (p.wan && p.n.wc && p.n.wc.mode === 'dhcp') setTimeout(() => p.n.wanDhcp(), 80); });
+  wifiSync(); E.need(); return k;
+}
+const freePort = (n, media) => n.ports.find(p => !p.cab && p.admin !== undefined && !p.con && !p.rs && !p.air && !p.wan && (!media || p.media === media));
+function cableTap(n, type) {
+  const done = p => {
+    if (!E.cab) { E.cab = { node: n, port: p }; hint('Tap the second device'); E.need(); return; }
+    const a = E.cab.port; E.cab = null; hint(''); connect(a, p, type); E.need();
+  };
+  if (E.cab && E.cab.node === n) return toast('Pick a different device');
+  if (type === 'console') { const p = n.ports.find(q => (q.con || q.rs) && !q.cab); if (!p) return toast(n.ports.some(q => q.con || q.rs) ? 'Console port already in use' : n.name + ' has no console port'); done(p); return; }
+  if (type === 'auto') { const p = E.cab ? freePort(n, E.cab.port.media) : (freePort(n, 'eth') || freePort(n)); if (!p) return toast('No free matching port on ' + n.name); done(p); return; }
+  const ps = $('#ps'); ps.innerHTML = `<b>${esc(n.name)} — choose a port</b><div class="g">${n.ports.map((p, i) => (p.con || p.rs || p.air) ? '' : `<button data-i="${i}" ${p.cab ? 'disabled' : ''}><span class="led" style="background:${p.cab ? '#ff3b30' : '#2ecc40'}"></span>${esc(ab(p.name))}</button>`).join('')}</div><button class="b" style="margin-top:8px;background:#999" id="pc">Cancel</button>`;
+  ps.classList.add('on'); ps.onclick = e => { const b = e.target.closest('button'); if (!b) return; ps.classList.remove('on'); if (b.id === 'pc') { E.cab = null; hint(''); return; } done(n.ports[+b.dataset.i]); };
+}
+function setTool(t) {
+  E.tool = t; E.cab = null; if (!t.startsWith('cable')) hint('');
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  document.querySelectorAll('.it').forEach(b => b.classList.toggle('on', b.dataset.cable === t));
+  E.cv.style.cursor = t === 'sel' ? 'default' : 'crosshair'; E.need();
+}
+function sendPdu(s, d) {
+  const row = { src: s.name, dst: d.name, st: 'In progress', t: E.now.toFixed(0) }; E.pdus.push(row); renderPdu();
+  const ip = d.host ? d.p.ip : d.kind === 'switch' ? d.svi.ip : (d.ports.find(p => p.ip) || {}).ip;
+  if (!ip) { row.st = 'Failed'; renderPdu(); return toast(d.name + ' has no IP'); }
+  const seq = ++s.seq, w = s.wait('icmp' + seq, 3000); s.sendIP(ip, 'ICMP', { type: 'echo', seq }, `Echo request seq=${seq}`); E.pump();
+  w.then(r => { row.st = r && r.type === 'rep' ? 'Successful' : 'Failed'; renderPdu(); });
+}
+function bubble(n, text, col, ms = 5000) { n.bubble = { text, col, until: performance.now() + ms }; E.need(); setTimeout(() => E.need(), ms + 80); }
+async function sendMsg(s, d, text) {
+  const ip = d.p.ip, ep = E.epoch, row = { src: s.name, dst: d.name, st: 'In progress', t: E.now.toFixed(0), ty: 'ICMP (msg)' }; E.pdus.push(row); renderPdu();
+  const fail = why => { row.st = 'Failed'; renderPdu(); bubble(s, '✖ ' + why, '#d22', 7000); toast(`${s.name} → ${d.name}: ${why}`); };
+  if (!ip) return fail(d.name + ' has no IP address');
+  const seq = ++s.seq, w = s.wait('icmp' + seq, 3000), st = s.sendIP(ip, 'ICMP', { type: 'echo', seq, msg: text, from: s.name }, `Echo request seq=${seq} · "${text.slice(0, 24)}"`);
+  if (st === 'down') return fail('Link down or no IP on ' + s.name);
+  if (st === 'nogw') return fail('No default gateway (different network)');
+  if (E.mode === 'sim') { hint('Press ▶ Play or ⏭ Step to watch ARP and ICMP'); setTimeout(() => hint(''), 5000); $('#dock').classList.add('open'); showDockTab('ev'); }
+  E.pump();
+  const r = await w; if (ep !== E.epoch) { row.st = 'Cancelled'; renderPdu(); return; }
+  if (r && r.type === 'rep') { row.st = 'Successful'; renderPdu(); bubble(s, `✔ Delivered to ${d.name}`, '#1a9d2e', 7000); toast(`✔ ${d.name} received: "${text}"`); }
+  else if (r && r.type === 'unreach') fail('Destination unreachable (no route)');
+  else fail(`No reply — ${d.name} did not receive it`);
+}
+const inboxHtml = n => n.inbox.length ? n.inbox.slice().reverse().map(m => `<div class="msg">💬 <b>${esc(m.from)}</b> <span class="sm">(${esc(m.ip)})</span><br>${esc(m.text)}</div>`).join('') : '<p class="sm">No messages yet.</p>';
+function renderPdu() { $('#pdub').innerHTML = E.pdus.map(r => `<tr><td style="color:${r.st === 'Successful' ? '#1a9d2e' : r.st === 'Failed' ? '#d22' : '#888'}">● ${r.st}</td><td>${esc(r.src)}</td><td>${esc(r.dst)}</td><td>${r.ty || 'ICMP'}</td><td>${r.t}</td></tr>`).join(''); }
+function addEvRow(i) {
+  const e = E.evs[i], tr = document.createElement('tr'); tr.dataset.i = i;
+  tr.innerHTML = `<td><span class="dot" style="background:${COL[e.pkt.type] || '#888'}"></span></td><td>${(e.t / 1000).toFixed(3)}</td><td>${esc(e.from.name)}</td><td>${esc(e.to.name)}</td><td>${e.pkt.type}</td><td>${esc(e.pkt.info)}</td>`;
+  $('#evb').appendChild(tr); tr.scrollIntoView({ block: 'nearest' });
+}
+const FC = { ICMP: '#2ecc40', ARP: '#ff9f0a', DHCP: '#af52de', DNS: '#0a84ff', HTTP: '#ff375f' };
+$('#flt').insertAdjacentHTML('beforeend', Object.keys(FC).map(k => `<button class="chip on" data-f="${k}" style="--c:${FC[k]}">${k}</button>`).join(''));
+$('#flt').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; E.filter[b.dataset.f] = !E.filter[b.dataset.f]; b.classList.toggle('on', E.filter[b.dataset.f]); };
+$('#evb').onclick = e => {
+  const tr = e.target.closest('tr'); if (!tr) return; $('#evb .sel')?.classList.remove('sel'); tr.classList.add('sel'); const ev = E.evs[tr.dataset.i], k = ev.pkt;
+  $('#evd').textContent = `At Device: ${ev.to.name}   (from ${ev.from.name})\n` + `Layer 2: Ethernet II   Src MAC ${k.smac}  →  Dst MAC ${k.dmac}\n` +
+    (k.type === 'ARP' ? `Layer 3: ARP ${k.data.op === 'req' ? 'REQUEST' : 'REPLY'}   ${k.info}` : `Layer 3: IPv4   Src ${k.sip}  →  Dst ${k.dip}   TTL ${k.ttl}\nLayer 4/7: ${k.type}   ${k.info}`) + (k.data.msg ? `\nPayload (message): "${k.data.msg}"` : '');
+};
+
+/* ───────── Terminal widget ───────── */
+function term(box, banner, prompt, exec, secret) {
+  box.innerHTML = '<div class="term"><pre class="to" style="font:inherit;white-space:pre-wrap"></pre><div class="tl"><span></span><input class="ti" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></div></div>';
+  const T = box.firstChild, o = T.querySelector('.to'), i = T.querySelector('input'), tp = T.querySelector('.tl span'), H = []; let hi = 0;
+  const out = s => { o.textContent += s; T.scrollTop = 1e9; }, clr = () => { o.textContent = ''; }, pr = () => { tp.textContent = prompt(); i.type = secret && secret() ? 'password' : 'text'; };
+  out(banner); pr(); T.onclick = () => i.focus();
+  i.onkeydown = async e => {
+    if (e.key === 'Enter') { const v = i.value, hid = secret && secret(); i.value = ''; out(prompt() + (hid ? '' : v) + '\n'); if (v.trim() && !hid) { H.push(v); hi = H.length; } i.disabled = true; try { await exec(v, out, clr); } catch (x) { out('% Error\n'); } i.disabled = false; pr(); i.focus(); T.scrollTop = 1e9; }
+    else if (e.key === 'ArrowUp') { if (hi > 0) i.value = H[--hi]; e.preventDefault(); } else if (e.key === 'ArrowDown') { i.value = hi < H.length - 1 ? H[++hi] : ''; hi = Math.min(hi, H.length); e.preventDefault(); }
+  };
+  if (matchMedia('(pointer:fine)').matches) setTimeout(() => i.focus(), 50);
+}
+async function pcExec(n, line, out, clr) {
+  const a = line.trim().split(/\s+/), c = (a[0] || '').toLowerCase(), p = n.p; if (!c) return;
+  if (c === 'cls') return clr();
+  if (c === 'ping') return a[1] ? n.ping(a[1], out) : out('Usage: ping [-n count] target\n');
+  if (c === 'ipconfig') {
+    const all = /\/all/i.test(a[1] || '');
+    out(`\nFastEthernet0 Connection:${all ? '(default port)' : ''}\n\n`);
+    if (all) out(`   Connection-specific DNS Suffix..: \n   Physical Address................: ${p.mac.replace(/\./g, '-')}\n`);
+    out(`   Link-local IPv6 Address.........: ${ll6(p.mac)}\n   IPv6 Address....................: ::\n   IPv4 Address....................: ${p.ip || '0.0.0.0'}\n   Subnet Mask.....................: ${p.mask || '0.0.0.0'}\n   Default Gateway.................: ::\n                                     ${n.gw || '0.0.0.0'}\n`);
+    if (all) out(`   DHCP Servers....................: ${n.dhcp ? '(dynamic)' : '0.0.0.0'}\n   DNS Servers.....................: ${n.dns || '::'}\n`); out('\n'); return;
+  }
+  if (c === 'arp' && a[1] === '-a') {
+    const e = Object.entries(n.arp); if (!e.length) return out('No ARP Entries Found\n');
+    out('  Internet Address      Physical Address      Type\n'); e.forEach(([i, m]) => out(`  ${i.padEnd(22)}${m.toLowerCase().padEnd(22)}dynamic\n`)); return;
+  }
+  out('Invalid Command.\n');
+}
+
+/* ───────── Device window ───────── */
+const W = { n: null, tab: '' };
+function openDev(n) {
+  W.n = n; W.dev = null; $('#ov').classList.add('on'); $('#wn').textContent = n.name;
+  const cli = !!n.cfg && !n.nocli, tabs = n.kind === 'server' ? ['Physical', 'Config', 'Services', 'Desktop'] : n.host ? ['Physical', 'Config', 'Desktop'] : cli ? ['Physical', 'Config', 'CLI'] : ['Physical', 'Config'];
+  $('#wt').innerHTML = tabs.map(t => `<button data-t="${t}">${t}</button>`).join(''); showTab(n.host ? 'Desktop' : cli ? 'CLI' : 'Config');
+}
+function showTab(t) { W.tab = t; document.querySelectorAll('#wt button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); T[t](W.n, $('#wb')); }
+$('#wt').onclick = e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.t); };
+$('#wx').onclick = () => { $('#ov').classList.remove('on'); consoleClose(W.dev); W.dev = null; E.need(); };
+const bindIn = (b, fn) => b.querySelectorAll('input,select,textarea').forEach(i => i.addEventListener('change', () => fn(i)));
+const T = {
+  Physical(n, b) {
+    b.innerHTML = `<div class="phys"><img src="${iconURL(n.ic)}"><div><button class="b on" id="pw" style="${n.on ? '' : 'background:#888'}">⏻ Power ${n.on ? 'ON' : 'OFF'}</button><p class="sm" style="margin-top:6px">Model: ${esc(n.model)}</p><p class="sm">Toggle power to simulate a device failure.</p></div></div><table class="tb"><tr><th>Port</th><th>Link</th><th>MAC</th></tr>${n.ports.filter(p => p.cab || n.ports.length < 6).map(p => `<tr><td>${esc(p.name)}</td><td><span class="led" style="background:${(p.con || p.rs) ? (p.cab ? '#29b6f6' : '#bbb') : p.ok ? '#2ecc40' : p.cab ? '#ff3b30' : '#bbb'}"></span>${p.air ? (p.cab ? 'Associated: ' + esc(p.peer.n.name) : 'Not associated') : p.con || p.rs ? (p.cab ? 'Console cable' : 'No cable') : p.ok ? 'Up' : p.cab ? 'Down' : 'No cable'}</td><td>${p.con || p.rs ? '—' : p.mac}</td></tr>`).join('')}</table>`;
+    $('#pw').onclick = () => { n.on = !n.on; n.reset(); wifiSync(); E.need(); T.Physical(n, b); };
+  },
+  Config(n, b) {
+    if (CFG[n.kind]) return CFG[n.kind](n, b);
+    let h = `<h4>Global Settings</h4><div class="row"><label>Display Name</label><input type="text" data-f="name" value="${esc(n.name)}"></div>`;
+    if (n.host) h += `<div class="row"><label>Gateway</label><input type="text" data-f="gw" value="${esc(n.gw)}"></div><div class="row"><label>DNS Server</label><input type="text" data-f="dns" value="${esc(n.dns)}"></div><h4>${esc(n.p.name)}</h4><p class="sm">MAC Address: ${n.p.mac} · Link-local: ${ll6(n.p.mac)}</p><p class="sm">Set the IP address from Desktop → IP Configuration.</p>`;
+    else h += `<h4>Interfaces</h4><table class="tb"><tr><th>Port</th><th>On</th>${(n.kind === 'router' || n.kind === 'asa') ? '<th>IP</th><th>Mask</th>' : ''}</tr>${n.ports.map((p, i) => p.con ? '' : `<tr><td>${esc(ab(p.name))}</td><td><input type="checkbox" data-p="${i}" data-f="admin" ${p.admin ? 'checked' : ''}></td>${(n.kind === 'router' || n.kind === 'asa') ? `<td><input type="text" size="12" data-p="${i}" data-f="ip" value="${esc(p.ip)}"></td><td><input type="text" size="12" data-p="${i}" data-f="mask" value="${esc(p.mask)}"></td>` : ''}</tr>`).join('')}</table>`;
+    b.innerHTML = h + (n.wifi ? wifiHtml(n) : ''); bindW(n, b);
+    bindIn(b, i => {
+      if (i.dataset.w) return; const f = i.dataset.f, p = n.ports[+i.dataset.p];
+      if (f === 'name') { n.name = i.value || n.name; $('#wn').textContent = n.name; }
+      else if (f === 'admin') setAdmin(p, i.checked);
+      else if (f === 'ip' || f === 'mask') { if (i.value && ip2n(i.value) === null) return i.classList.add('bad'); i.classList.remove('bad'); p[f] = i.value; if (f === 'ip' && !p.mask && i.value) { p.mask = '255.255.255.0'; T.Config(n, b); } }
+      else { if (i.value && ip2n(i.value) === null) return i.classList.add('bad'); i.classList.remove('bad'); n[f] = i.value; }
+      E.need();
+    });
+  },
+  CLI(n, b) { openConsole(n, b); },
+  Services(n, b) {
+    const S = n.svc; let cur = W.svc || 'DHCP'; const nav = `<div class="nav">${['DHCP', 'DNS', 'HTTP'].map(s => `<button data-s="${s}" class="${s === cur ? 'on' : ''}">${s}</button>`).join('')}</div>`;
+    const onoff = k => `<div class="row"><label>Service</label><label style="width:auto"><input type="radio" name="on" value="1" ${S[k].on ? 'checked' : ''}> On</label><label style="width:auto"><input type="radio" name="on" value="0" ${S[k].on ? '' : 'checked'}> Off</label></div>`;
+    let p = '';
+    if (cur === 'DHCP') { const D = S.dhcp; p = `<h4>DHCP</h4>${onoff('dhcp')}${[['Pool Name', 'pool'], ['Default Gateway', 'gw'], ['DNS Server', 'dns'], ['Start IP Address', 'start'], ['Subnet Mask', 'mask'], ['Max Users', 'max']].map(([l, k]) => `<div class="row"><label>${l}</label><input type="text" data-k="${k}" value="${esc(D[k])}"></div>`).join('')}<button class="b" id="sv">Save</button> <span class="sm" id="sm"></span>`; }
+    else if (cur === 'DNS') p = `<h4>DNS</h4>${onoff('dns')}<div class="row"><label>Name</label><input type="text" id="dn" placeholder="www.cisco.test"></div><div class="row"><label>Type</label><input type="text" value="A Record" disabled></div><div class="row"><label>Address</label><input type="text" id="da" placeholder="192.168.1.100"></div><button class="b" id="ad">Add</button><table class="tb" style="margin-top:8px"><tr><th>Name</th><th>Address</th><th></th></tr>${S.dns.recs.map((r, i) => `<tr><td>${esc(r.name)}</td><td>${r.ip ? esc(r.ip) : '<i>(this server)</i>'}</td><td><button class="b" data-d="${i}" style="padding:2px 10px">Delete</button></td></tr>`).join('')}</table>`;
+    else { const f = W.file && S.http.files[W.file] != null ? W.file : 'index.html'; W.file = f; p = `<h4>HTTP</h4>${onoff('http')}<div class="row"><label>File</label><select id="fs">${Object.keys(S.http.files).map(x => `<option ${x === f ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><button class="b" id="nf" style="padding:6px 10px">+ New</button></div><textarea id="ed" rows="10" style="width:100%;font:12px ui-monospace,monospace;padding:6px;border:1px solid var(--bd)">${esc(S.http.files[f])}</textarea><button class="b" id="sv" style="margin-top:6px">Save</button> <span class="sm" id="sm"></span>`; }
+    b.innerHTML = `<div class="split">${nav}<div style="flex:1;min-width:0">${p}</div></div>`;
+    b.querySelector('.nav').onclick = e => { const s = e.target.dataset.s; if (s) { W.svc = s; T.Services(n, b); } };
+    const key = { DHCP: 'dhcp', DNS: 'dns', HTTP: 'http' }[cur]; b.querySelectorAll('input[name=on]').forEach(r => r.onchange = () => { S[key].on = r.value === '1'; });
+    if (cur === 'DHCP') $('#sv').onclick = () => { b.querySelectorAll('[data-k]').forEach(i => { S.dhcp[i.dataset.k] = i.dataset.k === 'max' ? (+i.value || 50) : i.value; }); S.dhcp.leases = {}; $('#sm').textContent = 'Saved ✓'; };
+    if (cur === 'DNS') { $('#ad').onclick = () => { const nm = $('#dn').value.trim(), ip = $('#da').value.trim(); if (!nm || ip2n(ip) === null) return toast('Enter a valid name and IPv4 address'); S.dns.recs.push({ name: nm, ip }); T.Services(n, b); }; b.querySelectorAll('[data-d]').forEach(x => x.onclick = () => { S.dns.recs.splice(+x.dataset.d, 1); T.Services(n, b); }); }
+    if (cur === 'HTTP') { $('#fs').onchange = e => { W.file = e.target.value; T.Services(n, b); }; $('#sv').onclick = () => { S.http.files[W.file] = $('#ed').value; $('#sm').textContent = 'Saved ✓'; }; $('#nf').onclick = () => ask('New file name', 'page.html', v => { if (v) { S.http.files[v] = '<html><body>New page</body></html>'; W.file = v; T.Services(n, b); } }); }
+  },
+  Desktop(n, b) {
+    b.innerHTML = `<div class="tiles"><button class="tile" data-a="ip"><i>🌐</i>IP Configuration</button><button class="tile" data-a="cmd"><i>⌨</i>Command Prompt</button><button class="tile" data-a="web"><i>🧭</i>Web Browser</button><button class="tile" data-a="term"><i>🖥</i>Terminal</button><button class="tile" data-a="msg"><i>💬</i>Messages</button></div><p class="sm" style="margin-top:8px">Tip: IP Configuration → set Static or DHCP, then use Command Prompt to ping.</p>`;
+    b.onclick = e => { const t = e.target.closest('.tile'); if (t) APP[t.dataset.a](n, b); };
+  }
+};
+const wst = n => { const q = n.nics.find(x => x.air === 'wifi'); return q && q.cab ? `associated with <b>${esc(q.peer.n.name)}</b>` : 'not associated'; };
+const wifiHtml = n => `<h4>Wireless</h4><div class="row"><label>SSID</label><input type="text" data-w="wifi.ssid" value="${esc(n.wifi.ssid)}"></div><div class="row"><label>Passphrase</label><input type="text" data-w="wifi.key" value="${esc(n.wifi.key)}"></div><p class="sm">Status: ${wst(n)}. Move the device close to an access point; it connects automatically when SSID and passphrase match.</p>`;
+function bindW(n, b) {
+  b.querySelectorAll('[data-w]').forEach(i => i.addEventListener('change', () => {
+    if (i.dataset.ip && i.value && ip2n(i.value) === null) return i.classList.add('bad'); i.classList.remove('bad');
+    const path = i.dataset.w.split('.'), key = path.pop(); let o = n; path.forEach(k => { o = o[k]; });
+    const v = i.type === 'checkbox' ? i.checked : i.dataset.num ? (+i.value || 0) : i.value;
+    if (!path.length && key === 'name') { n.name = v || n.name; $('#wn').textContent = n.name; } else o[key] = v;
+    if (n.dh && /^(svi|dh)\./.test(i.dataset.w)) n.dh.leases = {};
+    if (i.dataset.re) T.Config(n, b);
+    wifiSync(); E.need();
+  }));
+}
+const wrow = (l, p, v, o = {}) => `<div class="row"><label>${l}</label><input type="text" data-w="${p}" ${o.ip ? 'data-ip="1"' : ''} ${o.num ? 'data-num="1"' : ''} value="${esc(v)}" ${o.dis ? 'disabled' : ''}></div>`;
+const CFG = {
+  ap(n, b) {
+    const assoc = n.slots.filter(s => s.cab).length;
+    b.innerHTML = `<h4>Global Settings</h4>${wrow('Display Name', 'name', n.name)}` + (n.radio === 'cell' ? `<h4>Cellular</h4><p class="sm">Phones and tablets within range connect automatically. Connect Coaxial0/Ethernet0 to the CO Server or a cloud.</p>`
+      : n.lw ? `<h4>Wireless</h4><p class="sm">Lightweight AP: SSIDs come from the WLC. Controller: <b>${esc((findWlc(n) || {}).name || 'none reachable (connect through switches to a WLC)')}</b></p>`
+      : `<h4>Wireless (${esc(n.model)})</h4>${wrow('SSID', 'ssid', n.ssid)}${wrow('Passphrase (WPA2)', 'key', n.key)}<p class="sm">Leave the passphrase empty for an open network.</p>`) + `<p class="sm">Associated clients: ${assoc} · range ${n.range}px</p>`;
+    bindW(n, b);
+  },
+  wrouter(n, b) {
+    const w = n.wc, st = w.mode === 'dhcp';
+    b.innerHTML = `<h4>Global Settings</h4>${wrow('Display Name', 'name', n.name)}<h4>Internet (WAN)</h4><div class="row"><label>Connection</label><select data-w="wc.mode" data-re="1"><option value="dhcp" ${st ? 'selected' : ''}>DHCP</option><option value="static" ${st ? '' : 'selected'}>Static IP</option></select><button class="b" id="rn">Renew</button></div>${wrow('IP address', 'wan.ip', n.wan.ip, { ip: 1, dis: st })}${wrow('Subnet mask', 'wan.mask', n.wan.mask, { ip: 1, dis: st })}${wrow('Default gateway', 'wc.gw', w.gw, { ip: 1, dis: st })}${wrow('DNS server', 'wc.dns', w.dns, { ip: 1, dis: st })}<p class="sm">Internet link: ${n.wan.ok ? 'up' : 'down'}. Traffic from the LAN is NAT-translated to the Internet IP.</p><h4>LAN</h4>${wrow('Router IP', 'svi.ip', n.svi.ip, { ip: 1 })}${wrow('Subnet mask', 'svi.mask', n.svi.mask, { ip: 1 })}<div class="row"><label>DHCP server</label><label style="width:auto"><input type="checkbox" data-w="dh.on" ${n.dh.on ? 'checked' : ''}> Enabled</label></div>${wrow('Start IP', 'dh.start', n.dh.start, { ip: 1 })}${wrow('Max users', 'dh.max', n.dh.max, { num: 1 })}<h4>Wireless</h4>${wrow('SSID', 'ssid', n.ssid)}${wrow('Passphrase (WPA2)', 'key', n.key)}<p class="sm">Associated clients: ${n.slots.filter(s => s.cab).length}</p>`;
+    bindW(n, b); $('#rn').onclick = async () => { w.mode = 'dhcp'; await n.wanDhcp(s => toast(s)); T.Config(n, b); };
+  },
+  wlc(n, b) {
+    b.innerHTML = `<h4>Global Settings</h4>${wrow('Display Name', 'name', n.name)}<h4>WLANs</h4><table class="tb"><tr><th>SSID</th><th>Passphrase</th><th>On</th><th></th></tr>${n.wlans.map((w, i) => `<tr><td><input type="text" data-w="wlans.${i}.ssid" value="${esc(w.ssid)}" size="10"></td><td><input type="text" data-w="wlans.${i}.key" value="${esc(w.key)}" size="10"></td><td><input type="checkbox" data-w="wlans.${i}.on" ${w.on !== false ? 'checked' : ''}></td><td><button data-del="${i}">x</button></td></tr>`).join('')}</table><button class="b" id="aw">+ Add WLAN</button><p class="sm">Lightweight APs (LAP-PT, 3702I) connected to this controller through switches broadcast these SSIDs. MAC ${n.p.mac}.</p>`;
+    bindW(n, b); $('#aw').onclick = () => { n.wlans.push({ ssid: 'WLAN' + (n.wlans.length + 1), key: '', on: true }); CFG.wlc(n, b); };
+    b.querySelectorAll('[data-del]').forEach(x => x.onclick = () => { n.wlans.splice(+x.dataset.del, 1); wifiSync(); CFG.wlc(n, b); });
+  }
+};
+const appShell = (b, n, title, body, after) => { b.onclick = null; b.innerHTML = `<div class="app"><div class="ah"><b>${title}</b><button id="ax">X</button></div><div class="ab">${body}</div></div>`; $('#ax').onclick = () => T.Desktop(n, b); after && after(); };
+const APP = {
+  ip(n, b) {
+    const p = n.p, f = (id, l, v) => `<div class="row"><label>${l}</label><input type="text" id="${id}" value="${esc(v)}" ${n.dhcp ? 'disabled' : ''}></div>`;
+    appShell(b, n, 'IP Configuration', `<div class="row"><label>Interface</label><b>${esc(p.name)}</b></div><div class="row"><label>IP Configuration</label><label style="width:auto"><input type="radio" name="m" value="d" ${n.dhcp ? 'checked' : ''}> DHCP</label><label style="width:auto"><input type="radio" name="m" value="s" ${n.dhcp ? '' : 'checked'}> Static</label></div>${f('i1', 'IPv4 Address', p.ip)}${f('i2', 'Subnet Mask', p.mask)}${f('i3', 'Default Gateway', n.gw)}${f('i4', 'DNS Server', n.dns)}<p class="sm" id="dst" style="min-height:18px;color:#1a5fb4"></p><h4>IPv6 Configuration</h4><div class="row"><label>Link Local Address</label><input type="text" value="${ll6(p.mac)}" disabled></div>`, () => {
+      const st = s => { const e = $('#dst'); if (e) e.textContent = s; };
+      b.querySelectorAll('input[name=m]').forEach(r => r.onchange = async () => { n.dhcp = r.value === 'd'; if (n.dhcp) { b.querySelectorAll('.ab input[type=text]').forEach(i => { if (i.id) i.disabled = true; }); await n.dhcpReq(st); if ($('#i1')) { $('#i1').value = p.ip; $('#i2').value = p.mask; $('#i3').value = n.gw; $('#i4').value = n.dns; } } else { b.querySelectorAll('.ab input[type=text]').forEach(i => { if (i.id) i.disabled = false; }); st(''); } });
+      const set = { i1: v => { p.ip = v; if (v && !p.mask) { p.mask = '255.255.255.0'; $('#i2').value = p.mask; } }, i2: v => { p.mask = v; }, i3: v => { n.gw = v; }, i4: v => { n.dns = v; } };
+      Object.keys(set).forEach(id => { const i = $('#' + id); i.onchange = () => { if (i.value && ip2n(i.value) === null) return i.classList.add('bad'); i.classList.remove('bad'); set[id](i.value); E.need(); }; });
+    });
+  },
+  msg(n, b) {
+    const peers = E.nodes.filter(o => o.host && o !== n);
+    appShell(b, n, 'Messages', `<h4 style="margin-top:0">Send a message</h4><div class="row"><label>To</label><select id="mt">${peers.map(o => `<option value="${o.id}">${esc(o.name)}${o.p.ip ? ' · ' + esc(o.p.ip) : ''}</option>`).join('')}</select></div><div class="row"><label>Message</label><input type="text" id="mx" value="Hello"></div><button class="b on" id="ms">Send message</button><p class="sm" style="margin-top:6px">Sent as an ICMP echo with your text inside. ARP finds the receiver's MAC first. Tip: switch to Simulation mode to watch it.</p><h4>Inbox (${n.inbox.length})</h4><div id="mi">${inboxHtml(n)}</div>`, () => {
+      $('#ms').onclick = () => { const d = E.nodes.find(o => o.id === +$('#mt').value); if (!d) return toast('Add another PC first'); $('#ov').classList.remove('on'); sendMsg(n, d, $('#mx').value.trim() || 'Hello'); };
+    });
+  },
+  cmd(n, b) { appShell(b, n, 'Command Prompt', '<div id="tm" style="height:100%"></div>', () => { $('.ab').style.padding = 0; term($('#tm'), 'Cisco Packet Tracer PC Command Line 1.0\n', () => 'C:\\>', (l, o, c) => pcExec(n, l, o, c)); }); },
+  term(n, b) {
+    const pr = (n.ports.find(q => q.rs) || {}).peer, dev = pr && pr.n, ok = dev && dev.on;
+    appShell(b, n, 'Terminal', ok ? '<div id="tm" style="height:100%"></div>' : '<p>No console connection. Connect a <b>Console</b> cable from this device\'s RS232 port to a switch/router Console port (and make sure it is powered on).</p>', () => {
+      $('#ax').onclick = () => { consoleClose(dev); T.Desktop(n, b); };
+      if (ok) { $('.ab').style.padding = 0; openConsole(dev, $('#tm'), `Connected to ${dev.name} (Console)\n`); }
+    });
+  },
+  web(n, b) {
+    appShell(b, n, 'Web Browser', `<div class="row"><label style="width:auto">URL</label><input type="text" id="u" value="http://www.myschool.com" autocapitalize="off"><button class="b" id="go">Go</button></div><p class="sm" id="ws"></p><div class="web" id="wv"></div>`, () => {
+      const go = async () => { const v = $('#wv'); v.textContent = ''; const r = await n.http($('#u').value, s => { $('#ws').textContent = s; }); $('#ws').innerHTML = (r.via ? `<span style="display:inline-block;background:#e6f0ff;color:#0a5fd8;border:1px solid #0a5fd8;border-radius:8px;padding:5px 10px;font-weight:700">✔ DNS is connect Successful</span> <span class="sm">${esc(r.via.host)} → ${esc(r.via.ip)}</span><br>` : '') + (r.err ? '' : `Done — HTTP ${r.code}`); if (r.err) v.innerHTML = `<b style="color:#c00">${esc(r.err)}</b>`; else render(v, r.html); };
+      $('#go').onclick = go; $('#u').onkeydown = e => { if (e.key === 'Enter') go(); };
+    });
+  }
+};
+function render(el, html) {
+  const d = new DOMParser().parseFromString(html, 'text/html'); d.querySelectorAll('script,iframe,object,embed,link,meta,style[src]').forEach(x => x.remove());
+  d.body.querySelectorAll('*').forEach(x => [...x.attributes].forEach(a => { if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) x.removeAttribute(a.name); }));
+  el.innerHTML = d.body.innerHTML;
+}
+function ask(title, val, cb) {
+  const ps = $('#ps'); ps.innerHTML = `<b>${esc(title)}</b><div class="row"><input type="text" id="pi" value="${esc(val)}" style="flex:1;padding:8px;border:1px solid var(--bd);border-radius:6px"><button class="b" id="po">OK</button><button class="b" id="pc" style="background:#999">Cancel</button></div>`;
+  ps.classList.add('on'); ps.onclick = null; const i = $('#pi'); i.focus(); const fin = ok => { ps.classList.remove('on'); ok && cb(i.value.trim()); }; $('#po').onclick = () => fin(true); $('#pc').onclick = () => fin(false); i.onkeydown = e => e.key === 'Enter' && fin(true);
+}
+
+/* ───────── Drawer & toolbar ───────── */
+const CATS = {
+  Routers: ['4331', '4321', '1941', '2901', '2911', '819IOX', '819HGW', '829', '1240', 'PT-Router', 'PT-Empty', '1841', '2620XM', '2621XM', '2811'].map(m => ['x', m]),
+  Switches: ['2960-24TT', 'PT-Switch', 'PT-Empty-SW', '3560-24PS', '3650-24PS', 'IE-2000', 'PT-Bridge', '2950-24', '2950T'].map(m => ['x', m]),
+  Hubs: ['PT-Hub', 'PT-Repeater', 'Coaxial-Splitter'].map(m => ['x', m]),
+  Wireless: ['Meraki', 'LAP-PT', '3702I', 'WLC-PT', '3504', '2504', 'Home-Router', 'AP-PT', 'AP-PT-A', 'AP-PT-AC', 'AP-PT-N', 'WRT300N', 'Home-Gateway', 'Cell-Tower', 'CO-Server'].map(m => ['x', m]),
+  Security: ['5506', '5505'].map(m => ['x', m]),
+  'WAN Emulation': ['PT-Cloud', 'PT-Empty-Cloud', 'DSL-Modem', 'Cable-Modem'].map(m => ['x', m]),
+  'End Devices': ['PC-PT', 'Laptop-PT', 'Server-PT', 'Meraki-Server', 'Network-Controller', 'Printer-PT', 'IPPhone-PT', 'VoIP-PT', 'Phone-PT', 'TV-PT', 'Tablet-PT', 'SmartPhone-PT', 'Generic-Wireless', 'Generic-Wired', 'Sniffer-PT'].map(m => ['x', m]),
+  Components: ['MCU-Board', 'SBC-Board', 'Thing-PT'].map(m => ['x', m]),
+  'Connections ⚡': [['cable:auto', '⚡ Auto Connect'], ['cable:straight', 'Straight-Through'], ['cable:cross', 'Crossover'], ['cable:console', 'Console'], ['cable:coax', 'Coaxial'], ['cable:phone', 'Phone']]
+};
+const cableSvg = (t, c) => `<svg width="48" height="38" viewBox="0 0 48 38"><path d="M6 32L42 6" stroke="${c}" stroke-width="3" stroke-linecap="round" ${t === 'cross' ? 'stroke-dasharray="6 5"' : ''}/>${t === 'auto' ? '<path d="M26 4l-10 16h8l-4 14 14-18h-8z" fill="#ff9f0a" stroke="#c46a00"/>' : ''}</svg>`;
+function drawCat(name) {
+  document.querySelectorAll('#cats button').forEach(b => b.classList.toggle('on', b.dataset.c === name));
+  $('#items').innerHTML = CATS[name].map(([k, m]) => k.startsWith('cable') ? `<button class="it" data-cable="${k}">${cableSvg(k.slice(6), k.endsWith('cross') ? '#444' : k.endsWith('console') ? '#29b6f6' : k.endsWith('coax') ? '#2f6fd6' : k.endsWith('phone') ? '#777' : '#111')}<span>${m}</span></button>` : `<button class="it" data-k="${k}" data-m="${m}"><img src="${iconURL((SPEC[m] || {}).ic || k)}"><span>${(SPEC[m] || {}).label || m}</span></button>`).join('');
+}
+$('#cats').innerHTML = Object.keys(CATS).map(c => `<button data-c="${c}">${c}</button>`).join('');
+$('#cats').onclick = e => { const b = e.target.closest('button'); if (b) drawCat(b.dataset.c); };
+$('#items').onclick = e => {
+  const b = e.target.closest('.it'); if (!b) return;
+  if (b.dataset.cable) { setTool(b.dataset.cable); hint(b.dataset.cable === 'cable:console' ? 'Console cable: tap a PC, then a switch/router' : 'Cable: tap the first device' + (b.dataset.cable === 'cable:auto' ? '' : ' then choose a port')); return; }
+  setTool('sel'); const k = b.dataset.k, m = b.dataset.m;
+  const [wx, wy] = E.s2w(E.W / 2 + (Math.random() - .5) * 120, E.H / 2 + (Math.random() - .5) * 90); mk(k, m, wx, wy); toast(`${m} added — drag to move, tap to configure`);
+};
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => { setTool(b.dataset.tool); if (b.dataset.tool === 'pdu') hint('PDU: tap the source device'); if (b.dataset.tool === 'msg') hint('Message: tap the SENDER device (e.g. PC0)'); if (b.dataset.tool === 'note') hint('Tap the canvas to place a note'); if (b.dataset.tool === 'del') hint('Tap a device, cable or note to delete'); if (b.dataset.tool === 'insp') hint('Tap a device to inspect its tables'); });
+$('#m-rt').onclick = () => E.setMode('rt'); $('#m-sim').onclick = () => E.setMode('sim');
+$('#d-play').onclick = e => { E.playing = !E.playing; e.target.textContent = E.playing ? '⏸ Pause' : '▶ Play'; E.need(); e.stopPropagation(); };
+$('#d-step').onclick = e => { E.finishAnims(); E.step(); e.stopPropagation(); }; $('#d-rst').onclick = e => { E.resetSim(); e.stopPropagation(); };
+$('#dh').onclick = () => $('#dock').classList.toggle('open');
+function showDockTab(t) { document.querySelectorAll('.tabs2 button').forEach(b => b.classList.toggle('on', b.dataset.dt === t)); $('#dp-ev').style.display = t === 'ev' ? '' : 'none'; $('#dp-pdu').style.display = t === 'pdu' ? '' : 'none'; }
+document.querySelectorAll('.tabs2 button').forEach(b => b.onclick = () => showDockTab(b.dataset.dt));
+$('#b-clear').onclick = () => { E.nodes = []; E.cables = []; E.notes = []; E.pdus = []; CNT = {}; E.resetSim(); renderPdu(); E.need(); };
+/* ───────── Save / Open topology (.pkt) ───────── */
+function serialize() {
+  const idx = new Map(E.nodes.map((n, i) => [n, i]));
+  return {
+    app: 'NetSim', format: 'pkt', v: 1, saved: new Date().toISOString(), view: { cx: E.cx, cy: E.cy, z: E.z }, counters: CNT,
+    nodes: E.nodes.map(n => ({ kind: n.kind, model: n.model, name: n.name, x: n.x, y: n.y, on: n.on,
+      ports: n.ports.map(p => ({ ip: p.ip, mask: p.mask, admin: p.admin, mac: p.mac, desc: p.desc, spd: p.spd, dpx: p.dpx, nameif: p.nameif, sec: p.sec })),
+      ex: n.ex, gw: n.gw, dns: n.dns, dhcp: n.dhcp, svc: n.svc, routes: n.routes, inbox: n.inbox, cfg: n.cfg, startup: n.startup, clk: n.clk, svi: n.svi && { ip: n.svi.ip, mask: n.svi.mask, admin: n.svi.admin } })),
+    cables: E.cables.filter(k => k.type !== 'wifi').map(k => ({ a: [idx.get(k.a.n), k.a.i], b: [idx.get(k.b.n), k.b.i], type: k.type })),
+    notes: E.notes
+  };
+}
+function loadTopo(d) {
+  if (!d || d.app !== 'NetSim' || !Array.isArray(d.nodes) || !Array.isArray(d.cables)) throw new Error('bad');
+  $('#b-clear').onclick();
+  const list = d.nodes.map(o => {
+    const n = mk(o.kind, o.model, +o.x || 0, +o.y || 0); n.name = o.name || n.name; n.on = o.on !== false; if (o.ex && 'ex' in n) n.ex = o.ex;
+    (o.ports || []).forEach((q, i) => { const p = n.ports[i]; if (p) { p.ip = q.ip || ''; p.mask = q.mask || ''; p.admin = q.admin !== false; p.desc = q.desc || ''; p.spd = q.spd || ''; p.dpx = q.dpx || ''; if (q.sec !== undefined) { p.sec = q.sec; p.nameif = q.nameif || ''; } if (q.mac) p.mac = q.mac; } });
+    if (n.host) { n.gw = o.gw || ''; n.dns = o.dns || ''; n.dhcp = !!o.dhcp; n.inbox = o.inbox || []; if (n.svc && o.svc) n.svc = o.svc; }
+    if (n.routes) n.routes = o.routes || [];
+    if (o.cfg) { n.cfg = Object.assign(newCfg(), o.cfg); n.startup = o.startup || null; if (o.clk) n.clk = o.clk; } if (n.svi && o.svi) Object.assign(n.svi, o.svi);
+    return n;
+  });
+  d.cables.forEach(c => { const a = list[c.a[0]], b = list[c.b[0]]; if (a && b && a.ports[c.a[1]] && b.ports[c.b[1]]) connect(a.ports[c.a[1]], b.ports[c.b[1]], c.type, true); });
+  wifiSync(); E.notes = d.notes || []; CNT = d.counters || CNT;
+  if (d.view) { E.cx = d.view.cx; E.cy = d.view.cy; E.z = d.view.z; }
+  E.need(); return { devices: list.length, cables: E.cables.length };
+}
+const store = { get() { try { return JSON.parse(localStorage.getItem('netsim.projects') || '{}'); } catch (_) { return null; } }, set(o) { try { localStorage.setItem('netsim.projects', JSON.stringify(o)); return true; } catch (_) { return false; } } };
+const restricted = (() => { try { return window.top !== window.self || location.protocol === 'blob:' || !window.isSecureContext; } catch (_) { return true; } })();
+function saveDialog() {
+  const data = JSON.stringify(serialize()), blob = new Blob([data], { type: 'application/octet-stream' }), kb = (blob.size / 1024).toFixed(1), ps = $('#ps'), url = URL.createObjectURL(blob);
+  let b64 = ''; try { b64 = btoa(unescape(encodeURIComponent(data))); } catch (_) {}
+  let canShare = false; try { canShare = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'a.pkt', { type: 'application/octet-stream' })] })); } catch (_) {}
+  ps.onclick = null;
+  ps.innerHTML = `<b>💾 Save topology</b>${restricted ? '<p class="sm" style="color:#b35c00;margin-top:4px">⚠ This page runs inside a restricted viewer, so browser downloads and clipboard are often blocked. Use <b>💽 Save in app</b> or copy the text from the box below.</p>' : ''}<div class="row" style="margin-top:8px"><input type="text" id="pi" value="MyTopology" style="flex:1;padding:8px;border:1px solid var(--bd);border-radius:6px" autocapitalize="off"><b>.pkt</b></div><p class="sm">${E.nodes.length} devices · ${E.cables.length} cables · ${kb} KB</p><div class="row" style="flex-wrap:wrap"><button class="b on" id="sdl">⬇ Download</button><button class="b" id="scp">📋 Copy</button><button class="b" id="sst">💽 Save in app</button>${canShare ? '<button class="b" id="ssh">📤 Share</button>' : ''}<button class="b" id="sx" style="background:#999">Close</button></div><p class="sm" id="smsg" style="min-height:34px"></p><details open><summary class="sm">Nothing downloaded or copied? Use these</summary><p class="sm" style="margin:6px 0"><a id="ldl" href="${url}" download="MyTopology.pkt">⬇ Tap to download</a> · <a id="ldt" href="data:application/octet-stream;base64,${b64}" target="_blank" rel="noopener">open as text</a></p><p class="sm">Or tap the box, select all, and copy it manually:</p><textarea id="sta" readonly rows="5" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--bd);border-radius:6px;font:11px ui-monospace,monospace"></textarea></details>`;
+  $('#sta').value = data; ps.classList.add('on');
+  const nm = () => (($('#pi').value || '').replace(/[\\/:*?"<>|]/g, '_').replace(/\.pkt$/i, '').trim() || 'MyTopology') + '.pkt';
+  const msg = (t, c) => { const m = $('#smsg'); m.style.color = c || '#1a5fb4'; m.textContent = t; };
+  const sel = () => { const t = $('#sta'); t.focus(); t.select(); t.setSelectionRange(0, 1e9); return t; };
+  $('#sta').onclick = sel; $('#pi').oninput = () => { $('#ldl').download = nm(); };
+  $('#sdl').onclick = () => {
+    const name = nm(); $('#ldl').download = name;
+    try { const a = document.createElement('a'); a.href = url; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove(); msg(`✔ Download started: ${name} — check your Downloads folder. If no file appears, tap "Tap to download" below, use 💽 Save in app, or copy the text.`); }
+    catch (e) { msg('Downloads are blocked here — use 💽 Save in app or copy the text below.', '#c00'); }
+  };
+  $('#scp').onclick = async () => {
+    try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(data); return msg('✔ Copied to clipboard. Paste it in a notes app; load it later with Open → Paste.'); } } catch (_) {}
+    try { sel(); if (document.execCommand('copy')) return msg('✔ Copied to clipboard. Paste it in a notes app; load it later with Open → Paste.'); } catch (_) {}
+    sel(); msg('Could not copy automatically — the text is selected below: press and hold → Copy.', '#b35c00');
+  };
+  $('#sst').onclick = () => { const o = store.get(), name = nm(); if (o === null || !store.set({ ...o, [name]: { t: Date.now(), d: data } })) return msg('Browser storage is blocked here (restricted viewer). Open the file in Chrome/Safari for this, or copy the text.', '#c00'); msg(`✔ Saved in the app as "${name}". Open it from 📂 Open → Saved in app.`); };
+  if (canShare) $('#ssh').onclick = async () => { try { await navigator.share({ files: [new File([blob], nm(), { type: 'application/octet-stream' })], title: nm() }); msg('✔ Shared / saved'); } catch (e) { if (!e || e.name !== 'AbortError') msg('Share failed — use another option.', '#c00'); } };
+  $('#sx').onclick = () => { ps.classList.remove('on'); setTimeout(() => URL.revokeObjectURL(url), 500); };
+}
+function tryLoad(text, label) {
+  try { const r = loadTopo(JSON.parse(text)); $('#ps').classList.remove('on'); toast(`📂 Opened ${label}: ${r.devices} devices, ${r.cables} cables`); return true; }
+  catch (x) { const m = $('#omsg'), t = 'Cannot open this. Only topologies saved from this app work (original Cisco .pkt files are encrypted).'; if (m && $('#ps').classList.contains('on')) { m.style.color = '#c00'; m.textContent = t; } else toast(t); return false; }
+}
+const openDialog = () => {
+  const ps = $('#ps'), o = store.get() || {}, names = Object.keys(o).sort((a, b) => o[b].t - o[a].t); ps.onclick = null;
+  ps.innerHTML = `<b>📂 Open topology</b><div class="row" style="flex-wrap:wrap;margin-top:8px"><button class="b on" id="of">📁 Choose file…</button><button class="b" id="oc">📋 Paste from clipboard</button><button class="b" id="ox" style="background:#999">Close</button></div>${names.length ? '' : '<p class="sm" style="margin-top:8px">No topologies saved in the app yet — press 💾 Save first, then it will be listed here.</p>'}${names.length ? `<h4>Saved in app — tap Open to load</h4>${names.map(n => `<div class="row"><b style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(n)}</b><span class="sm">${new Date(o[n].t).toLocaleString()}</span><button class="b on" data-o="${esc(n)}" style="padding:4px 12px">Open</button><button class="b" data-x="${esc(n)}" style="padding:4px 10px;background:#c33">🗑</button></div>`).join('')}` : ''}<textarea id="ot" rows="4" placeholder="…or paste the topology text here" style="width:100%;margin-top:6px;padding:6px;border:1px solid var(--bd);border-radius:6px;font:11px ui-monospace,monospace"></textarea><button class="b" id="ol" style="margin-top:6px">Load pasted text</button><p class="sm" id="omsg" style="min-height:18px"></p>`;
+  ps.classList.add('on');
+  $('#of').onclick = () => { if (/; wv\)/.test(navigator.userAgent)) { const m = $('#omsg'); m.style.color = '#b35c00'; m.textContent = 'This app cannot browse device files. Use the Saved in app list, or paste the topology text below.'; return; } $('#fi').value = ''; $('#fi').click(); };
+  $('#oc').onclick = async () => { try { $('#ot').value = await navigator.clipboard.readText(); } catch (_) { $('#omsg').textContent = 'Clipboard is blocked: long-press the box and paste manually.'; } };
+  $('#ol').onclick = () => tryLoad($('#ot').value, 'pasted text');
+  $('#ox').onclick = () => ps.classList.remove('on');
+  ps.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.o) tryLoad(o[b.dataset.o].d, b.dataset.o); if (b.dataset.x) { delete o[b.dataset.x]; store.set(o); openDialog(); } };
+};
+/* Save = copy kept inside the app + export as .exe ; Open = list of saved topologies (+ choose file) ; long-press for the alternate action */
+const SAVE_EXT = '.exe';
+async function saveTopo() {
+  const d = new Date(), z = n => String(n).padStart(2, '0'), name = `Topology-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}${SAVE_EXT}`;
+  const data = JSON.stringify(serialize());
+  /* always keep a copy inside the app (works in any WebView) */
+  const o = store.get(), inApp = o !== null && store.set({ ...o, [name]: { t: Date.now(), d: data } });
+  toast(inApp ? `💾 Saved in app: ${name}  (open it from 📂 Open)` : '⚠ Could not save inside the app (storage blocked)');
+  /* best-effort export to a real file: native bridge -> share sheet -> browser download */
+  try { if (window.NetSimNative && NetSimNative.saveFile) { NetSimNative.saveFile(name, btoa(unescape(encodeURIComponent(data)))); return; } } catch (_) {}
+  const blob = new Blob([data], { type: 'application/octet-stream' });
+  try { const f = new File([blob], name, { type: 'application/octet-stream' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: name }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  if (/; wv\)/.test(navigator.userAgent)) { try { if (navigator.share) { await navigator.share({ title: name, text: data }); return; } } catch (e) { if (e && e.name === 'AbortError') return; } saveDialog(); return; }
+  try { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000); } catch (_) {}
+}
+async function openTopo() {
+  if (window.showOpenFilePicker) { try { const [h] = await showOpenFilePicker({ multiple: false }); const f = await h.getFile(); return tryLoad(await f.text(), f.name); } catch (e) { if (e && e.name === 'AbortError') return; } }
+  const i = $('#fi'); i.accept = '*/*'; i.multiple = false; i.value = ''; i.click();
+}
+(function () {
+  const lp = (id, tap, hold) => { const b = $(id); let t = null, long = false;
+    b.addEventListener('pointerdown', () => { long = false; t = setTimeout(() => { long = true; hold(); }, 700); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => clearTimeout(t)));
+    b.onclick = () => { if (!long) tap(); long = false; }; };
+  lp('#b-save', saveTopo, saveDialog); lp('#b-open', openDialog, openTopo);
+})();
+$('#fi').onchange = async e => { const f = e.target.files[0]; if (f) tryLoad(await f.text(), f.name); };
+addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveTopo(); } });
+function demo() {
+  $('#b-clear').onclick(); const r = mk('router', '2911', 0, -20), s1 = mk('switch', '2960-24TT', -240, 100), s2 = mk('switch', '2960-24TT', 240, 100), p0 = mk('pc', 'PC-PT', -320, 240), p1 = mk('pc', 'PC-PT', -160, 240), sv = mk('server', 'Server-PT', 240, 240);
+  const L = (a, b) => connect(freePort(a), freePort(b), 'auto');
+  L(r, s1); L(r, s2); L(s1, p0); L(s1, p1); L(s2, sv);
+  [[r.ports[0], '192.168.1.1'], [r.ports[1], '192.168.2.1']].forEach(([p, ip]) => { p.ip = ip; p.mask = '255.255.255.0'; p.admin = true; });
+  p0.p.ip = '192.168.1.10'; p1.p.ip = '192.168.1.11'; sv.p.ip = '192.168.2.10'; [p0, p1, sv].forEach(n => { n.p.mask = '255.255.255.0'; n.gw = n.p === sv.p ? '192.168.2.1' : '192.168.1.1'; });
+  p0.dns = p1.dns = '192.168.2.10'; sv.svc.dns.recs.push({ name: 'www.cisco.test', ip: '192.168.2.10' });
+  sv.svc.dhcp.start = '192.168.2.100'; sv.svc.dhcp.gw = '192.168.2.1'; sv.svc.dhcp.dns = '192.168.2.10';
+  E.cx = E.W / 2; E.cy = E.H / 2 - 80; E.z = Math.min(1, E.W / 760); E.need(); toast('Demo loaded. Try 💬 Message: tap PC0 then PC1 (use Simulation mode to watch ARP + ICMP)');
+}
+$('#b-demo').onclick = demo;
+if (innerWidth < 700) $('#dock').classList.remove('open'); if (window.visualViewport) { const f = () => { const v = visualViewport; $('#ov').style.top = v.offsetTop + 'px'; $('#ov').style.height = v.height + 'px'; $('#ps').style.bottom = Math.max(0, innerHeight - v.height - v.offsetTop) + 'px'; const a = document.activeElement; if (a && a.matches && a.matches('input,textarea')) setTimeout(() => a.scrollIntoView({ block: 'nearest' }), 50); }; visualViewport.addEventListener('resize', f); visualViewport.addEventListener('scroll', f); }
+window.__NS = { serialize, loadTopo, E, iosExec, iosTree, walk, filterU, tokz, mk, connect, SPEC, CATS, wifiSync, freePort, delNode, delCable, sendMsg, get nodes() { return E.nodes; } };
+drawCat('End Devices'); E.setMode('rt');
+})();
+</script>
+<script>if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')) addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').catch(()=>{}));</script>
+</body>
+</html>

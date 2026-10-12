@@ -164,7 +164,7 @@ class NetworkNode {
   }
   wait(k, ms) { return new Promise(r => { this.w[k] = r; E.sched(ms, () => { if (this.w[k] === r) { delete this.w[k]; r(null); } }); }); }
   fire(k, v) { const r = this.w[k]; if (r) { delete this.w[k]; r(v); } }
-  reset() { this.bubble = null; this.arp = {}; this.pend = {}; this.nd = {}; this.pend6 = {}; Object.keys(this.w).forEach(k => this.fire(k, null)); }
+  reset() { this.bubble = null; this.arp = {}; this.pend = {}; this.nd = {}; this.pend6 = {}; this._cm = undefined; this._env = undefined; this._cpuSim = undefined; this._cu = 0; this._nc = undefined; Object.keys(this.w).forEach(k => this.fire(k, null)); }
 }
 const emit = (n, p, pkt) => p.tun ? tunEncap(n, p, pkt) : p.svi ? n.fwd(pkt, null, p.vlan) : E.tx(p, pkt);
 function l3out(n, p, pkt, nh) {
@@ -715,8 +715,8 @@ class DeviceSwitch extends NetworkNode {
   natV(p) { return (p.x && p.x.native) || 1; }
   /* effective switchport mode: static access/trunk, otherwise dynamic-auto (DTP) */
   eff(p) {
-    const x = p.x || {}; if (x.mode) return x.mode;
-    const q = p.peer; if (!q || !(q.n instanceof DeviceSwitch) || x.nonego) return 'access';
+    const x = p.x || {}; if (x.l3 && this.l3) return 'access'; if (x.mode) return x.mode;
+    const q = p.peer; if (!q || !(q.n instanceof DeviceSwitch) || x.nonego || (q.x && q.x.l3 && q.n.l3)) return 'access';
     const qx = q.x || {}, my = x.dyn || 'auto', qm = qx.mode ? qx.mode : (qx.dyn || 'auto');
     if (qm === 'access') return 'access'; if (qx.nonego) return 'access'; if (qm === 'trunk') return 'trunk';
     return (my === 'desirable' || qm === 'desirable') ? 'trunk' : 'access';
@@ -725,8 +725,9 @@ class DeviceSwitch extends NetworkNode {
     const a = p.x && p.x.allowed; if (!a || a === 'all') return null;
     if (p._as !== a) { p._as = a; p._set = new Set(a === 'none' ? [] : vlanList(a) || []); } return p._set;
   }
-  inVlan(p, v) { if (this.eff(p) === 'trunk') { const s = this.allowedSet(p); return !s || s.has(v); } return ((p.x && p.x.vlan) || 1) === v; }
+  inVlan(p, v) { if (p.x && p.x.l3 && this.l3) return false; if (this.eff(p) === 'trunk') { const s = this.allowedSet(p); return !s || s.has(v); } return ((p.x && p.x.vlan) || 1) === v; }
   ingVlan(p, k) {
+    if (p.x && p.x.l3 && this.l3) return 0;
     if (this.eff(p) === 'trunk') { const v = k.tag || this.natV(p); return this.inVlan(p, v) ? v : 0; }
     return k.tag ? 0 : ((p.x && p.x.vlan) || 1);
   }
@@ -752,6 +753,7 @@ class DeviceSwitch extends NetworkNode {
     for (const k in G) G[k].forEach(p => m.set(p, G[k][0])); this._bt = TOPO; this._bm = m; return m;
   }
   out(q, k, v) {
+    if (q.x && q.x.l3 && this.l3) return;
     if (!q.ok || q.con || (q.blks && q.blks.has(v))) return;
     const ld = this.bundles().get(q); if (ld && ld !== q) return;
     let c = k;
@@ -767,6 +769,7 @@ class DeviceSwitch extends NetworkNode {
     for (const q of this.ports) if (q !== p) this.out(q, k, v);
   }
   rx(p, k) {
+    if (p.x && p.x.l3 && this.l3) return this.rxL3(p, k);
     if (STP.ap !== TOPO) stpEnsure();
     const v = this.ingVlan(p, k); if (!v || !this.vl[v] || (p.blks && p.blks.has(v))) return;
     if (!this.psCheck(p, k.smac)) return;
@@ -784,25 +787,37 @@ class DeviceSwitch extends NetworkNode {
     if (s && s.ip && this.svUp(s) && (k.dmac === s.mac || k.dmac === BC)) { this.cpu(s, k); if (k.dmac === s.mac) return; }
     this.fwd(k, p, v);
   }
+  /* routed ports (`no switchport`) behave like router interfaces: own MAC/IP, ARP, connected route, ACLs */
+  rtPorts() { return this.l3 ? this.ports.filter(q => !q.con && q.x && q.x.l3) : []; }
+  l3ifs() { return [...Object.values(this.svis), ...this.rtPorts()]; }
+  l3up(q) { return q.svi ? this.svUp(q) : !!(q.admin && q.ok); }
+  rxL3(p, k) {
+    if (k.v6 || (k.dmac !== p.mac && k.dmac !== BC)) return; cpuHit(this, 1);
+    if (k.type === 'ARP') { const d = k.data; if (d.op === 'probe' || d.op === 'conflict') return; if (d.op === 'rep' || d.tip === p.ip) learn(this, k.sip, k.smac); if (d.op === 'req' && p.ip && d.tip === p.ip) E.tx(p, arpRep(p, k)); return; }
+    if (k.dmac === BC || !p.ip) return;
+    if (!this.xc.iprt && !this.l3ifs().some(q => q.ip && q.ip === k.dip)) return;
+    this.l3fwd(p, k);
+  }
   candsL() {
-    const L = []; for (const s of Object.values(this.svis)) if (s.ip && this.svUp(s)) L.push({ net: netOf(s.ip, s.mask), mask: s.mask, p: s, nh: '', ad: 0, m: 0, code: 'C' });
-    for (const r of this.routes || []) { const q = Object.values(this.svis).find(s => s.ip && this.svUp(s) && r.nh && same(s.ip, r.nh, s.mask)); if (q) L.push({ net: r.net, mask: r.mask, p: q, nh: r.nh, ad: r.ad || 1, m: 0, code: 'S' }); }
+    const L = []; for (const s of this.l3ifs()) if (s.ip && this.l3up(s)) L.push({ net: netOf(s.ip, s.mask), mask: s.mask, p: s, nh: '', ad: 0, m: 0, code: 'C' });
+    for (const r of this.routes || []) { const q = this.l3ifs().find(s => s.ip && this.l3up(s) && r.nh && same(s.ip, r.nh, s.mask)); if (q) L.push({ net: r.net, mask: r.mask, p: q, nh: r.nh, ad: r.ad || 1, m: 0, code: 'S' }); }
     return L;
   }
-  cands() { return this.candsL(); }
-  route(dip) { let b = null; for (const r of this.candsL()) { if (!same(r.net, dip, r.mask)) continue; const l = m2p(r.mask); if (!b || l > b.l || (l === b.l && r.ad < b.ad)) b = { l, p: r.p, nh: r.nh || dip, ad: r.ad }; } return b; }
+  cands() { const L = this.candsL(); if (!this.xc.iprt) return L; dynEnsure(); for (const d of this.dyn || []) { const q = this.l3ifs().find(z => z.name === d.ifn); if (q && q.ip && this.l3up(q)) L.push({ net: d.net, mask: d.mask, p: q, nh: d.nh, ad: d.ad, m: d.m, code: d.code }); } return L; }
+  route(dip) { let b = null; for (const r of this.cands()) { if (!same(r.net, dip, r.mask)) continue; const l = m2p(r.mask); if (!b || l > b.l || (l === b.l && (r.ad < b.ad || (r.ad === b.ad && (r.m || 0) < (b.m || 0))))) b = { l, p: r.p, nh: r.nh || dip, ad: r.ad, m: r.m || 0 }; } return b; }
   aclOk(p, dir, k) { const id = p.x && p.x.acl && p.x.acl[dir]; return !id || aclPermit(this, id, k); }
   l3fwd(s, k) {
+    cpuHit(this, 0.5);
     if (!this.aclOk(s, 'in', k)) { if (k.type === 'ICMP' && k.data.type === 'echo') this.send(k.sip, 'ICMP', { type: 'unreach', seq: k.data.seq, nid: k.data.nid }, 'Destination unreachable (administratively prohibited)'); return; }
-    const loc = Object.values(this.svis).find(q => q.ip && q.ip === k.dip && this.svUp(q));
-    if (loc) { if (k.type === 'SNMP') snmpAgentIn(this, k); else if (k.type === 'ICMP' && k.data.type === 'echo') this.send(k.sip, 'ICMP', { type: 'rep', seq: k.data.seq, nid: k.data.nid }, `Echo reply seq=${k.data.seq}`); return; }
+    const loc = this.l3ifs().find(q => q.ip && q.ip === k.dip && this.l3up(q));
+    if (loc) { if (k.type === 'SNMP') snmpAgentIn(this, k); else if (k.type === 'ICMP') { const d = k.data; if (d.type === 'echo') this.send(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); else this.fire('icmp' + d.seq, { type: d.type, t: E.now, from: d.from || k.sip }); } return; }
     if (--k.ttl <= 0) return; const r = this.route(k.dip);
     if (!r) { if (k.type === 'ICMP' && k.data.type === 'echo') this.send(k.sip, 'ICMP', { type: 'unreach', seq: k.data.seq, nid: k.data.nid }, 'Destination host unreachable'); return; }
     if (!this.aclOk(r.p, 'out', k)) return;
     l3out(this, r.p, k, r.nh);
   }
   cpu(s, k) {
-    const d = k.data;
+    const d = k.data; cpuHit(this, 2);
     if (this.xc.iprt && k.type !== 'ARP' && k.dmac === s.mac && k.dip !== s.ip) { this.l3fwd(s, k); return; }
     if (k.type === 'ARP') { if (d.op === 'rep' || d.tip === s.ip) learn(this, k.sip, k.smac); if (d.op === 'req' && d.tip === s.ip) this.fwd(arpRep(s, k), null, s.vlan); return; }
     if (k.dmac !== s.mac || k.dip !== s.ip) return;
@@ -813,8 +828,8 @@ class DeviceSwitch extends NetworkNode {
   /* management traffic: out of the SVI whose subnet contains dip, otherwise via "ip default-gateway" */
   send(dip, type, data, info) {
     if (this.xc.iprt) { const r = this.route(dip); if (r) { l3out(this, r.p, new Packet({ type, sip: r.p.ip, dip, data, info, ttl: 255 }), r.nh); return true; } }
-    const S = Object.values(this.svis); let s = S.find(q => q.ip && this.svUp(q) && same(q.ip, dip, q.mask)), nh = dip;
-    if (!s) { const g = this.xc.gw; if (!g) return false; s = S.find(q => q.ip && this.svUp(q) && same(q.ip, g, q.mask)); if (!s) return false; nh = g; }
+    const S = this.l3ifs(); let s = S.find(q => q.ip && this.l3up(q) && same(q.ip, dip, q.mask)), nh = dip;
+    if (!s) { const g = this.xc.gw; if (!g) return false; s = S.find(q => q.ip && this.l3up(q) && same(q.ip, g, q.mask)); if (!s) return false; nh = g; }
     l3out(this, s, new Packet({ type, sip: s.ip, dip, data, info, ttl: 255 }), nh); return true;
   }
   async ping(t, out, o = {}) {
@@ -984,7 +999,7 @@ function stpApply() {
   const sws = E.nodes.filter(n => n.kind === 'switch' && n.xc); sws.forEach(n => n.ports.forEach(p => { if (p.blks) p.blks.clear(); }));
   if (STP.ver !== TOPO) { STP.ver = TOPO; STP.res.clear(); }
   for (const a of sws) {
-    const act = new Set(); for (const p of a.ports) { if (p.con || !p.ok) continue; if (a.eff(p) === 'trunk') { const s = a.allowedSet(p); (s ? [...s] : Object.keys(a.vl).map(Number)).forEach(v => a.vl[v] && act.add(v)); } else act.add((p.x && p.x.vlan) || 1); }
+    const act = new Set(); for (const p of a.ports) { if (p.con || !p.ok || (p.x && p.x.l3 && a.l3)) continue; if (a.eff(p) === 'trunk') { const s = a.allowedSet(p); (s ? [...s] : Object.keys(a.vl).map(Number)).forEach(v => a.vl[v] && act.add(v)); } else act.add((p.x && p.x.vlan) || 1); }
     for (const v of act) { if (!a.vl[v]) continue; const R = stpVlan(a, v); for (const [p, sp] of R.info) { if (p.n !== a) continue;
       if (sp.sts !== 'FWD') { (p.blks || (p.blks = new Set())).add(v); }
       const q = p.peer; if (p.x && p.x.bpdu && p.x.pf && q && q.n.kind === 'switch' && !p.err) { p.err = true; } } }
@@ -1026,20 +1041,35 @@ class DeviceRouter extends NetworkNode {
     if (x.statics.some(q => q.glob === ip)) return true;
     return x.rules.some(r => { if (r.kind !== 'pool') return false; const P = x.pools[r.pool]; return !!P && ip2n(ip) >= ip2n(P.s) && ip2n(ip) <= ip2n(P.e); });
   }
+  natC() { return natCt(this); }
   natIn(p, k) {
-    if (!(p.x && p.x.nat === 'outside')) return; const nid = k.data && k.data.nid, f = nid && this.nt[nid];
-    if (f && f.glob === k.dip) { k.dip = f.loc; return; }
-    const s = this.xc.nat.statics.find(q => q.glob === k.dip && !q.proto); if (s) { k.dip = s.loc; return; }
-    const sp = this.xc.nat.statics.find(q => q.glob === k.dip && q.proto && q.proto === pktProto(k) && +q.gp === (k.type === 'ICMP' ? 0 : pktDport(k))); if (sp) k.dip = sp.loc;
+    if (!(p.x && p.x.nat === 'outside')) return; const nid = k.data && k.data.nid, f = nid && this.nt[nid], N = natCt(this);
+    if (f && f.glob === k.dip) { k.dip = f.loc; f.rt = Date.now(); N.hits++; return; }
+    const s = this.xc.nat.statics.find(q => q.glob === k.dip && !q.proto); if (s) { k.dip = s.loc; N.hits++; return; }
+    const sp = this.xc.nat.statics.find(q => q.glob === k.dip && q.proto && q.proto === pktProto(k) && +q.gp === (k.type === 'ICMP' ? 0 : pktDport(k))); if (sp) { k.dip = sp.loc; N.hits++; }
   }
+  /* dynamic pool allocation: one inside-global per inside-local host (non-overload); null = pool exhausted */
+  natAlloc(r, P, loc) {
+    if (r.ovl) return P.s; const s = ip2n(P.s), e = ip2n(P.e), used = new Map();
+    for (const f of Object.values(this.nt)) { const a = ip2n(f.glob); if (a >= s && a <= e) used.set(f.glob, f.loc); }
+    for (const [g, l] of used) if (l === loc) return g;
+    for (let a = s; a <= e; a++) { const g = n2ip(a >>> 0); if (!used.has(g) && !this.xc.nat.statics.some(q => q.glob === g)) return g; }
+    return null;
+  }
+  /* returns false when the packet must be dropped (pool exhausted) */
   natOut(p, o, k) {
-    if (!(p.x && p.x.nat === 'inside' && o.x && o.x.nat === 'outside')) return; const nid = k.data && k.data.nid, x = this.xc.nat;
-    const s = x.statics.find(q => q.loc === k.sip && !q.proto); if (s) { k.sip = s.glob; return; }
-    for (const r of x.rules) {
-      if (!aclPermit(this, r.acl, k)) continue; let g;
-      if (r.kind === 'iface') { const q = this.ports.find(z => z.name === r.ifn); g = q && q.ip; } else { const P = x.pools[r.pool]; g = P && (r.ovl ? P.s : n2ip(ip2n(P.s) + (this.ntc++ % (ip2n(P.e) - ip2n(P.s) + 1)))); }
-      if (!g) return; if (nid) { const K = Object.keys(this.nt); if (K.length > 2000) delete this.nt[K[0]]; this.nt[nid] = { loc: k.sip, glob: g, proto: pktProto(k), dst: k.dip, t: E.now }; } k.sip = g; return;
+    if (!(p.x && p.x.nat === 'inside' && o.x && o.x.nat === 'outside')) return true; const nid = k.data && k.data.nid, x = this.xc.nat, N = natCt(this);
+    const s = x.statics.find(q => q.loc === k.sip && !q.proto); if (s) { k.sip = s.glob; N.hits++; return true; }
+    for (let ri = 0; ri < x.rules.length; ri++) {
+      const r = x.rules[ri]; if (!aclPermit(this, r.acl, k)) continue; let g;
+      const f0 = nid && this.nt[nid]; if (f0 && f0.loc === k.sip && f0.ri === ri) { k.sip = f0.glob; f0.rt = Date.now(); f0.pk = (f0.pk | 0) + 1; N.hits++; return true; }
+      if (r.kind === 'iface') { const q = this.ports.find(z => z.name === r.ifn); g = q && q.ip; }
+      else { const P = x.pools[r.pool]; if (P) { g = this.natAlloc(r, P, k.sip); if (g === null) { N.miss++; N.pm[r.pool] = (N.pm[r.pool] | 0) + 1; return false; } } }
+      if (!g) return true; N.miss++;
+      if (nid) { const K = Object.keys(this.nt); if (K.length > 2000) delete this.nt[K[0]]; this.nt[nid] = { loc: k.sip, glob: g, proto: pktProto(k), dst: k.dip, t: E.now, rt: Date.now(), ri, pk: 1 }; const tot = natUniq(this).length + x.statics.length; if (tot > N.peak) { N.peak = tot; N.peakT = Date.now(); } }
+      k.sip = g; return true;
     }
+    return true;
   }
   /* DHCP server / relay */
   dhcpPool(ipx) { for (const [nm, P] of Object.entries(this.xc.dhcp.pools)) if (P.net && same(P.net, ipx, P.mask)) return [nm, P]; return null; }
@@ -1072,10 +1102,10 @@ class DeviceRouter extends NetworkNode {
     }
     if (k.dmac === BC) { if (k.type === 'DHCP') this.dhcpRx(p, k); return; }
     if (!this.aclOk(p, 'in', k)) return this.unreach(k, p);
-    this.natIn(p, k); const C = ipc(this); C.inr++;
+    this.natIn(p, k); const C = ipc(this); C.inr++; cpuHit(this, 0.6);
     const lc = locals(this).find(q => q.ip && q.ip === k.dip);
     if (lc) {
-      const d = k.data; C.del++; if (k.type === 'SNMP') C.udpIn++;
+      const d = k.data; C.del++; cpuHit(this, 3); if (k.type === 'SNMP') C.udpIn++;
       if (k.type === 'ICMP') { C.icIn++; const t = d.type; if (t === 'echo') C.icInEcho++; else if (t === 'rep') C.icInRep++; else if (t === 'unreach') C.icInDest++; else if (t === 'ttl') C.icInTime++; }
       if (k.type === 'ICMP') { if (d.type === 'echo') { this.dbg('icmp', `ICMP: echo reply sent, src ${k.dip}, dst ${k.sip}`); this.rOut(k.sip, 'ICMP', { type: 'rep', seq: d.seq, nid: d.nid }, `Echo reply seq=${d.seq}`); } else this.fire('icmp' + d.seq, { type: d.type, t: E.now, from: d.from || k.sip }); }
       else if (k.type === 'SNMP') snmpAgentIn(this, k);
@@ -1088,7 +1118,7 @@ class DeviceRouter extends NetworkNode {
     if (!r) { this.unreach(k, p); return; }
     if (this.fw && !this.fw(p, r.p, k)) return;
     if (!this.aclOk(r.p, 'out', k)) return this.unreach(k, p);
-    this.natOut(p, r.p, k); C.fwd++;
+    if (this.natOut(p, r.p, k) === false) return this.unreach(k, p); C.fwd++;
     this.dbg('icmp', `ICMP: forwarding ${k.sip} -> ${k.dip}`);
     l3out(this, r.p, k, r.nh);
   }
@@ -1193,26 +1223,32 @@ class DeviceRouter extends NetworkNode {
     const r = this.route6(dn); if (!r) { T6(this).nr++; return this.err6(k, 'unreach', p, 'noroute'); }
     k.fwd6 = 1; l3out6(this, r.p, k, r.nh || d);
   }
-  reset() { super.reset(); this.nt = {}; }
+  reset() { super.reset(); this.nt = {}; this._nc = undefined; }
 }
 /* ════════ dynamic routing: IPv4 and IPv6 RIP / OSPF / EIGRP converge over the real topology ════════ */
 const DYN = { ver: -1 };
 const isRtr = nd => nd && (nd.kind === 'router' || nd.kind === 'asa');
-function l2routers(p) {
-  const res = [], seen = new Set(); if (!p.ok || !p.peer) return res;
+/* a Layer-3 switch with "ip routing" takes part in RIP/OSPF/EIGRP through its SVIs and routed ports */
+const isL3sw = nd => !!(nd && nd.kind === 'switch' && nd.l3 && nd.xc && nd.xc.iprt);
+const rIfs = n => n.kind === 'switch' ? [...n.l3ifs(), ...Object.keys(n.xc.lo || {}).map(k => lopt(n, k))] : locals(n);
+const rUp = (n, p) => n.kind === 'switch' && !p.lo ? n.l3up(p) : p.ok;
+function l2routers(p, l3) {
+  const res = [], seen = new Set(); if (!p.svi && (!p.ok || !p.peer)) return res;
   const walk = (port, v) => {
     const q = port.peer, m = q && q.n; if (!m || !port.ok) return;
     if (isRtr(m)) { res.push(q); return; }
-    if (m.kind === 'switch' && m.xc) { const vv = v || m.ingVlan(q, {}); if (!vv || !m.vl[vv] || !m.inVlan(q, vv)) return; const key = m.id + ':' + vv + ':' + q.i; if (seen.has(key)) return; seen.add(key); for (const r of m.ports) if (r !== q && !r.con && r.ok && m.inVlan(r, vv)) { const q2 = r.peer, m2 = q2 && q2.n; if (m2 && m2.kind === 'switch' && m2.xc && !m2.inVlan(q2, vv)) continue; walk(r, vv); } return; }
+    if (l3 && m.kind === 'switch' && m.l3 && q.x && q.x.l3) { res.push(q); return; }
+    if (m.kind === 'switch' && m.xc) { const vv = v || m.ingVlan(q, {}); if (!vv || !m.vl[vv] || !m.inVlan(q, vv)) return; const key = m.id + ':' + vv + ':' + q.i; if (seen.has(key)) return; seen.add(key); if (l3 && m.l3) { const sv = m.svis[vv]; if (sv && sv.ip && m.svUp(sv)) res.push(sv); } for (const r of m.ports) if (r !== q && !r.con && r.ok && m.inVlan(r, vv)) { const q2 = r.peer, m2 = q2 && q2.n; if (m2 && m2.kind === 'switch' && m2.xc && !m2.inVlan(q2, vv)) continue; walk(r, vv); } return; }
     if (m.kind === 'hub' || m.kind === 'cloud') { const key = m.id + ':' + q.i; if (seen.has(key)) return; seen.add(key); for (const r of m.ports) if (r !== q && r.ok) walk(r, v); }
   };
+  if (p.svi) { const m = p.n, vv = p.vlan; if (!l3 || !m || !m.ports) return res; for (const r of m.ports) if (!r.con && r.ok && r.peer && m.inVlan(r, vv)) { const q2 = r.peer, m2 = q2 && q2.n; if (m2 && m2.kind === 'switch' && m2.xc && !m2.inVlan(q2, vv)) continue; walk(r, vv); } return res.filter(q => q !== p); }
   walk(p, 0); return res.filter(q => q !== p);
 }
 const clsNet = ip => { const f = ip2n(ip) >>> 24; const m = f < 128 ? '255.0.0.0' : f < 192 ? '255.255.0.0' : '255.255.255.0'; return [netOf(ip, m), m]; };
 function protoIfs(n, t, id) {
   const out = [], cf = t === 'rip' ? n.xc.rip : n.xc[t][id]; if (!cf) return out;
-  for (const p of locals(n)) {
-    if (!p.ip || !p.admin) continue; let on = false, area = '0';
+  for (const p of rIfs(n)) {
+    if (!p.ip || !p.admin || (n.kind === 'switch' && !p.lo && !n.l3up(p))) continue; let on = false, area = '0';
     if (t === 'rip') on = cf.nets.some(a => clsNet(p.ip)[0] === clsNet(a)[0]);
     else if (t === 'ospf') { const h = cf.nets.find(a => same(a.ip, p.ip, wild2m(a.wild))); if (h) { on = true; area = h.area; } const po = p.x && p.x.ospf; if (po && po.pid === +id && po.area !== undefined) { on = true; area = po.area; } }
     else on = cf.nets.some(a => same(a.ip, p.ip, a.wild ? wild2m(a.wild) : classMask(a.ip)));
@@ -1295,27 +1331,27 @@ function dynCompute6(R) {
   }
 }
 function dynCompute() {
-  DYN.ver = TOPO; const R = E.nodes.filter(nd => isRtr(nd) && nd.xc && nd.on); R.forEach(r => { r.dyn = []; r.nbr = { rip: [], ospf: [], eigrp: [] }; });
+  DYN.ver = TOPO; const R = E.nodes.filter(nd => (isRtr(nd) || isL3sw(nd)) && nd.xc && nd.on), Rr = R.filter(isRtr); E.nodes.forEach(nd => { if (nd.kind === 'switch') nd.dyn = []; }); R.forEach(r => { r.dyn = []; r.nbr = { rip: [], ospf: [], eigrp: [] }; });
   const procs = []; R.forEach(r => { if (r.xc.rip) procs.push({ r, t: 'rip', id: 0 }); Object.keys(r.xc.ospf).forEach(i => procs.push({ r, t: 'ospf', id: i })); Object.keys(r.xc.eigrp).forEach(i => procs.push({ r, t: 'eigrp', id: i })); });
   for (const t of ['rip', 'ospf', 'eigrp']) {
     const P = procs.filter(q => q.t === t); if (!P.length) continue;
     P.forEach(q => { q.ifs = protoIfs(q.r, t, q.id); q.cf = t === 'rip' ? q.r.xc.rip : q.r.xc[t][q.id]; q.tab = new Map(); q.edges = [];
       q.ifs.forEach(i => { const k = netOf(i.p.ip, i.p.mask) + '/' + i.p.mask; q.tab.set(k, { net: netOf(i.p.ip, i.p.mask), mask: i.p.mask, m: 0, own: 1 }); });
-      (q.cf.redist || []).forEach(rd => { if (rd.src === 'connected') locals(q.r).forEach(p => { if (p.ip && p.ok) { const k = netOf(p.ip, p.mask) + '/' + p.mask; if (!q.tab.has(k)) q.tab.set(k, { net: netOf(p.ip, p.mask), mask: p.mask, m: q.cf.dm || 20, own: 1 }); } }); if (rd.src === 'static') q.r.routes.forEach(s => { const k = s.net + '/' + s.mask; if (!q.tab.has(k)) q.tab.set(k, { net: s.net, mask: s.mask, m: q.cf.dm || 20, own: 1 }); }); });
+      (q.cf.redist || []).forEach(rd => { if (rd.src === 'connected') rIfs(q.r).forEach(p => { if (p.ip && rUp(q.r, p)) { const k = netOf(p.ip, p.mask) + '/' + p.mask; if (!q.tab.has(k)) q.tab.set(k, { net: netOf(p.ip, p.mask), mask: p.mask, m: q.cf.dm || 20, own: 1 }); } }); if (rd.src === 'static') q.r.routes.forEach(s => { const k = s.net + '/' + s.mask; if (!q.tab.has(k)) q.tab.set(k, { net: s.net, mask: s.mask, m: q.cf.dm || 20, own: 1 }); }); });
       if (q.cf.defo && q.r.routes.some(s => s.net === '0.0.0.0' && s.mask === '0.0.0.0')) q.tab.set('0.0.0.0/0.0.0.0', { net: '0.0.0.0', mask: '0.0.0.0', m: 1, own: 1 }); });
-    for (const a of P) for (const ia of a.ifs) { if (ia.pass) continue; for (const q of l2routers(ia.p)) { const b = P.find(z => z.r === q.n); if (!b) continue; const ib = b.ifs.find(z => z.p === q && !z.pass); if (!ib || !same(ia.p.ip, q.ip, ia.p.mask) || ia.p.mask !== q.mask) continue;
+    for (const a of P) for (const ia of a.ifs) { if (ia.pass) continue; for (const q of l2routers(ia.p, true)) { const b = P.find(z => z.r === q.n); if (!b) continue; const ib = b.ifs.find(z => z.p === q && !z.pass); if (!ib || !same(ia.p.ip, q.ip, ia.p.mask) || ia.p.mask !== q.mask) continue;
       if (t === 'ospf') { const A = (ia.p.x && ia.p.x.ospf) || {}, B2 = (q.x && q.x.ospf) || {}; if (ia.area !== ib.area || (A.hello || 10) !== (B2.hello || 10) || (A.dead || 40) !== (B2.dead || 40) || !!A.auth !== !!B2.auth || (A.auth && JSON.stringify(A.md) !== JSON.stringify(B2.md))) continue; }
       if (t === 'eigrp' && a.id !== b.id) continue;
-      const cost = t === 'rip' ? 1 : t === 'ospf' ? ((ia.p.x && ia.p.x.ospf && ia.p.x.ospf.cost) || Math.max(1, Math.round(100000 / (ia.p.lo ? 8000000 : speedOf(ia.p) * 1000) * 1000) || 1)) : 1;
+      const cost = t === 'rip' ? 1 : t === 'ospf' ? ((ia.p.x && ia.p.x.ospf && ia.p.x.ospf.cost) || Math.max(1, Math.round(100000 / (ia.p.lo ? 8000000 : (ia.p.svi ? 1000 : speedOf(ia.p)) * 1000) * 1000) || 1)) : 1;
       a.edges.push({ b, ia, ib, cost }); } }
     for (let it = 0; it < 20; it++) { let ch = false; for (const a of P) for (const e of a.edges) for (const [k, v] of e.b.tab) { if (a.tab.has(k) && a.tab.get(k).own) continue; const m = v.m + e.cost; if (t === 'rip' && m >= 16) continue; const o = a.tab.get(k); if (!o || m < o.m) { a.tab.set(k, { net: v.net, mask: v.mask, m, nh: e.ib.p.ip, ifn: e.ia.p.name }); ch = true; } } if (!ch) break; }
     P.forEach(a => { const ad = a.cf.ad || (t === 'rip' ? 120 : t === 'ospf' ? 110 : 90), code = t === 'rip' ? 'R' : t === 'ospf' ? 'O' : 'D';
-      a.edges.forEach(e => a.r.nbr[t].push({ id: e.b.r.name, ip: e.ib.p.ip, ifn: e.ia.p.name, rid: (() => { const cr = ridCfg4(e.b.r); if (cr) return cr; const l = Object.keys(e.b.r.xc.lo).map(z => lopt(e.b.r, z).ip).filter(Boolean).sort((x1, x2) => ip2n(x2) - ip2n(x1))[0]; return l || locals(e.b.r).map(z => z.ip).filter(Boolean).sort((x1, x2) => ip2n(x2) - ip2n(x1))[0] || '0.0.0.0'; })(), prio: (e.ib.p.x && e.ib.p.x.ospf && e.ib.p.x.ospf.prio) ?? 1 }));
+      a.edges.forEach(e => a.r.nbr[t].push({ id: e.b.r.name, ip: e.ib.p.ip, ifn: e.ia.p.name, rid: (() => { const cr = ridCfg4(e.b.r); if (cr) return cr; const l = Object.keys(e.b.r.xc.lo).map(z => lopt(e.b.r, z).ip).filter(Boolean).sort((x1, x2) => ip2n(x2) - ip2n(x1))[0]; return l || rIfs(e.b.r).map(z => z.ip).filter(Boolean).sort((x1, x2) => ip2n(x2) - ip2n(x1))[0] || '0.0.0.0'; })(), prio: (e.ib.p.x && e.ib.p.x.ospf && e.ib.p.x.ospf.prio) ?? 1 }));
       for (const [k, v] of a.tab) if (!v.own) a.r.dyn.push({ net: v.net, mask: v.mask, nh: v.nh, ifn: v.ifn, ad, m: v.m, code, proto: t }); });
   }
-  dynCompute6(R);
-  try { bgpCompute(R); } catch (e) { console.warn('bgp', e); }
-  try { fhrpCompute(R); } catch (e) { console.warn('fhrp', e); }
+  dynCompute6(Rr);
+  try { bgpCompute(Rr); } catch (e) { console.warn('bgp', e); }
+  try { fhrpCompute(Rr); } catch (e) { console.warn('fhrp', e); }
 }
 const dynEnsure = () => { if (DYN.ver !== TOPO) dynCompute(); };
 
@@ -1644,7 +1680,9 @@ function renderCfg(s) {
   const c = s.cfg, xc = s.xc || newXc(), sw = s.kind === 'switch', asa = s.kind === 'asa', rt = s.kind === 'router' || asa, L = ['!', 'version 15.0', (c.encrypt ? '' : 'no ') + 'service password-encryption', '!', 'hostname ' + s.name, '!'];
   if (c.secret) L.push('enable secret 5 ' + md5ish(c.secret.v)); if (c.enable) L.push('enable password ' + pwShow(c.enable)); if (c.secret || c.enable) L.push('!');
   xc.users.forEach(u => L.push(asa ? `username ${u.u} password ${u.pw} privilege ${u.pr}` : `username ${u.u}${u.pr !== 1 ? ' privilege ' + u.pr : ''} ${u.sec ? 'secret 5 ' + md5ish(u.pw) : 'password ' + u.pw}`)); if (xc.users.length) L.push('!');
+  if (sw && xc.iprt) L.push('ip routing');
   if (!xc.dom.lookup) L.push('no ip domain-lookup'); if (xc.dom.name) L.push('ip domain name ' + xc.dom.name); if (xc.dom.ns.length) L.push('ip name-server ' + xc.dom.ns.join(' ')); Object.entries(xc.dom.hosts).forEach(([h, i]) => L.push(`ip host ${h} ${i}`));
+  Object.entries(xc.cpuTh || {}).forEach(([t, q]) => L.push(`process cpu threshold type ${t} rising ${q.rise} interval ${q.rint}` + (q.fall !== undefined ? ` falling ${q.fall} interval ${q.fint}` : '')));
   if (xc.v6uc) L.push('ipv6 unicast-routing'); if (!xc.cdp) L.push('no cdp run'); if (xc.lldp) L.push('lldp run'); if (xc.tz) L.push('clock timezone ' + xc.tz); xc.ntp.forEach(i => L.push('ntp server ' + i)); xc.snmp.forEach(q => L.push(`snmp-server community ${q.s} ${q.m.toUpperCase()}${q.acl ? ' ' + q.acl : ''}`)); snmpCfgLines(xc).forEach(l => L.push(l)); (xc.syslog && xc.syslog.hosts || []).forEach(i => L.push('logging host ' + i)); if (xc.syslog && !xc.syslog.buffered) L.push('no logging buffered'); if (xc.syslog && xc.syslog.level !== 7) L.push('logging trap ' + xc.syslog.level); if (xc.dai && xc.dai.vlans.length) L.push('ip arp inspection vlan ' + fmtVl(xc.dai.vlans));
   Object.values(xc.hsrp || {}).forEach(q => { L.push('interface ' + q.ifn, ` standby ${q.id} ip ${q.vip || '0.0.0.0'}`); if (q.priority !== 100) L.push(` standby ${q.id} priority ${q.priority}`); if (q.preempt) L.push(` standby ${q.id} preempt`); L.push('!'); });
   Object.values(xc.vrrp || {}).forEach(q => { L.push('interface ' + q.ifn, ` vrrp ${q.id} ipv4 ${q.vip || '0.0.0.0'}`); if (q.priority !== 100) L.push(` vrrp ${q.id} priority ${q.priority}`); if (q.preempt) L.push(` vrrp ${q.id} preempt`); L.push('!'); });
@@ -1658,12 +1696,12 @@ function renderCfg(s) {
   }
   L.push('!');
   const ifx = o => { const x = o.x || {}; if (x.encap && x.encap !== 'hdlc') L.push(' encapsulation ' + x.encap); if (x.clock) L.push(' clock rate ' + x.clock);  if (x.bw) L.push(' bandwidth ' + x.bw); if (x.delay) L.push(' delay ' + x.delay); if (x.mtu) L.push(' mtu ' + x.mtu); if (x.cdp === false) L.push(' no cdp enable'); if (x.helper) x.helper.forEach(h => L.push(' ip helper-address ' + h)); if (x.acl) { if (x.acl.in) L.push(` ip access-group ${x.acl.in} in`); if (x.acl.out) L.push(` ip access-group ${x.acl.out} out`); } if (x.hsrp) L.push(' standby ' + x.hsrp.id + ' ip ' + x.hsrp.vip); if (x.vrrp) L.push(' vrrp ' + x.vrrp.id + ' ipv4 ' + x.vrrp.vip); if (x.nat) L.push(' ip nat ' + x.nat); if (x.daiTrust) L.push(' ip arp inspection trust'); if (x.ipsg) L.push(' ip verify source'); if (x.ospf) { const q = x.ospf; if (q.pid !== undefined && q.area !== undefined) L.push(` ip ospf ${q.pid} area ${q.area}`); if (q.cost) L.push(' ip ospf cost ' + q.cost); if (q.prio !== undefined) L.push(' ip ospf priority ' + q.prio); if (q.hello) L.push(' ip ospf hello-interval ' + q.hello); if (q.dead) L.push(' ip ospf dead-interval ' + q.dead); if (q.auth) L.push(' ip ospf authentication message-digest'); if (q.md) L.push(` ip ospf message-digest-key ${q.md.id} md5 ${q.md.key}`); } if (x.ll) L.push(` ipv6 address ${x.ll} link-local`); if (x.v6en) L.push(' ipv6 enable'); (x.v6 || []).forEach(a => L.push(' ipv6 address ' + a)); if (x.v6o) { const q = x.v6o; if (q.area !== undefined) L.push(` ipv6 ospf ${q.pid} area ${q.area}`); if (q.cost) L.push(' ipv6 ospf cost ' + q.cost); if (q.prio !== undefined) L.push(' ipv6 ospf priority ' + q.prio); } if (x.v6rip) L.push(` ipv6 rip ${x.v6rip} enable`); if (x.mtu6) L.push(' ipv6 mtu ' + x.mtu6); if (x.acl6) { if (x.acl6.in) L.push(` ipv6 traffic-filter ${x.acl6.in} in`); if (x.acl6.out) L.push(` ipv6 traffic-filter ${x.acl6.out} out`); } if (x.raSup) L.push(' ipv6 nd ra suppress'); if (x.dadN !== undefined) L.push(' ipv6 nd dad attempts ' + x.dadN); if (x.reach) L.push(' ipv6 nd reachable-time ' + x.reach); (x.ndPfx || []).forEach(q => L.push(' ipv6 nd prefix ' + q)); if (x.ndM) L.push(' ipv6 nd managed-config-flag'); if (x.ndO) L.push(' ipv6 nd other-config-flag'); if (x.v6auto) L.push(' ipv6 address autoconfig'); if (x.v6dhcp) L.push(' ipv6 address dhcp' + (x.v6dhcpRc ? ' rapid-commit' : '')); (x.v6g || []).forEach(g => L.push(` ipv6 address ${g.n} ${g.h}`)); if (x.d6pd) L.push(` ipv6 dhcp client pd ${x.d6pd.name}${x.d6pd.rc ? ' rapid-commit' : ''}`); if (x.d6srv) L.push(` ipv6 dhcp server ${x.d6srv.pool}${x.d6srv.pref ? ' preference ' + x.d6srv.pref : ''}${x.d6srv.rc ? ' rapid-commit' : ''}${x.d6srv.hint ? ' allow-hint' : ''}`); (x.d6relay || []).forEach(r => L.push(` ipv6 dhcp relay destination ${r.dst}${r.ifn ? ' ' + r.ifn : ''}`)); };
-  const swx = o => { const x = o.x || {}; if (x.dyn) L.push(' switchport mode dynamic ' + x.dyn); if (x.snT) L.push(' ip dhcp snooping trust'); if (x.snR) L.push(' ip dhcp snooping limit rate ' + x.snR); if (x.mode) L.push(' switchport mode ' + x.mode); if (x.vlan) L.push(' switchport access vlan ' + x.vlan); if (x.native) L.push(' switchport trunk native vlan ' + x.native); if (x.allowed && x.allowed !== 'all') L.push(' switchport trunk allowed vlan ' + x.allowed); if (x.voice) L.push(' switchport voice vlan ' + x.voice); if (x.nonego) L.push(' switchport nonegotiate'); const ps = x.ps; if (ps && ps.on) { L.push(' switchport port-security'); if (ps.max !== 1) L.push(' switchport port-security maximum ' + ps.max); if (ps.viol !== 'shutdown') L.push(' switchport port-security violation ' + ps.viol); (ps.cfg || []).forEach(m => L.push(' switchport port-security mac-address ' + m)); if (ps.sticky) { L.push(' switchport port-security mac-address sticky'); ps.macs.filter(m => ps.stk[m]).forEach(m => L.push(' switchport port-security mac-address sticky ' + m.toLowerCase())); } } if (x.pf) L.push(' spanning-tree portfast'); if (x.bpdu) L.push(' spanning-tree bpduguard enable'); if (x.groot) L.push(' spanning-tree guard root'); if (x.p2p) L.push(' spanning-tree link-type point-to-point'); if (x.cprot) L.push(' channel-protocol ' + x.cprot); if (x.cg) L.push(` channel-group ${x.cg.n} mode ${x.cg.mode}`); };
+  const swx = o => { const x = o.x || {}; if (x.l3) L.push(' no switchport'); if (x.dyn) L.push(' switchport mode dynamic ' + x.dyn); if (x.snT) L.push(' ip dhcp snooping trust'); if (x.snR) L.push(' ip dhcp snooping limit rate ' + x.snR); if (x.mode) L.push(' switchport mode ' + x.mode); if (x.vlan) L.push(' switchport access vlan ' + x.vlan); if (x.native) L.push(' switchport trunk native vlan ' + x.native); if (x.allowed && x.allowed !== 'all') L.push(' switchport trunk allowed vlan ' + x.allowed); if (x.voice) L.push(' switchport voice vlan ' + x.voice); if (x.nonego) L.push(' switchport nonegotiate'); const ps = x.ps; if (ps && ps.on) { L.push(' switchport port-security'); if (ps.max !== 1) L.push(' switchport port-security maximum ' + ps.max); if (ps.viol !== 'shutdown') L.push(' switchport port-security violation ' + ps.viol); (ps.cfg || []).forEach(m => L.push(' switchport port-security mac-address ' + m)); if (ps.sticky) { L.push(' switchport port-security mac-address sticky'); ps.macs.filter(m => ps.stk[m]).forEach(m => L.push(' switchport port-security mac-address sticky ' + m.toLowerCase())); } } if (x.pf) L.push(' spanning-tree portfast'); if (x.bpdu) L.push(' spanning-tree bpduguard enable'); if (x.groot) L.push(' spanning-tree guard root'); if (x.p2p) L.push(' spanning-tree link-type point-to-point'); if (x.cprot) L.push(' channel-protocol ' + x.cprot); if (x.cg) L.push(` channel-group ${x.cg.n} mode ${x.cg.mode}`); };
   const ifc = (nm, o, w, svi) => { L.push('interface ' + nm); if (o.desc) L.push(' description ' + o.desc); if (o.nameif) L.push(' nameif ' + o.nameif, ' security-level ' + o.sec); if (sw && !svi) swx(o); if (o.spd) L.push(' speed ' + o.spd); if (o.dpx) L.push(' duplex ' + o.dpx); ifx(o); if (o.x && o.x.v6eigrp) L.push(' ipv6 eigrp ' + o.x.v6eigrp); if (w) L.push(o.ip ? ` ip address ${o.ip} ${o.mask}` : ' no ip address'); if (!o.admin) L.push(' shutdown'); L.push('!'); };
   (xc.tun && Object.keys(xc.tun).forEach(k => { const o = xc.tun[k]; L.push('interface Tunnel' + k); if (o.desc) L.push(' description ' + o.desc); ifx(o); L.push(o.ip ? ` ip address ${o.ip} ${o.mask}` : ' no ip address'); if (o.src) L.push(' tunnel source ' + o.src); if (o.dst) L.push(' tunnel destination ' + o.dst); L.push(' tunnel mode gre ip'); if (!o.admin) L.push(' shutdown'); L.push('!'); }));
   (xc.lo && Object.keys(xc.lo).forEach(k => { const o = xc.lo[k]; L.push('interface Loopback' + k); if (o.desc) L.push(' description ' + o.desc); ifx(o); L.push(o.ip ? ` ip address ${o.ip} ${o.mask}` : ' no ip address'); if (!o.admin) L.push(' shutdown'); L.push('!'); }));
   Object.keys(xc.po || {}).forEach(k => { const o = xc.po[k]; L.push('interface Port-channel' + k); if (o.desc) L.push(' description ' + o.desc); swx(o); if (!o.admin) L.push(' shutdown'); L.push('!'); });
-  s.ports.forEach(p => ifc(p.name, p, rt));
+  s.ports.forEach(p => ifc(p.name, p, rt || (sw && !!(p.x && p.x.l3))));
   if (s.svi) ifc('Vlan1', s.svi, true, true); (s.svs || []).forEach(q => ifc('Vlan' + q.vlan, q, true, true));
   if (xc.rip) { const r = xc.rip; L.push('router rip'); if (r.ver) L.push(' version ' + r.ver); r.passiveDef ? L.push(' passive-interface default') : r.passive.forEach(p => L.push(' passive-interface ' + p)); r.active.forEach(p => L.push(' no passive-interface ' + p)); if (r.noAuto) L.push(' no auto-summary'); if (r.defo) L.push(' default-information originate'); r.redist.forEach(q => L.push(' redistribute ' + q.src + (q.id ? ' ' + q.id : ''))); if (r.dm) L.push(' default-metric ' + r.dm); if (r.ad) L.push(' distance ' + r.ad); if (r.maxp !== 4) L.push(' maximum-paths ' + r.maxp); r.nets.forEach(q => L.push(' network ' + q)); L.push('!'); }
   Object.keys(xc.ospf).forEach(k => { const r = xc.ospf[k]; L.push('router ospf ' + k); if (r.rid) L.push(' router-id ' + r.rid); r.passiveDef ? L.push(' passive-interface default') : r.passive.forEach(p => L.push(' passive-interface ' + p)); r.active.forEach(p => L.push(' no passive-interface ' + p)); if (r.defo) L.push(' default-information originate'); r.redist.forEach(q => L.push(' redistribute ' + q.src + (q.id ? ' ' + q.id : ''))); if (r.dm) L.push(' default-metric ' + r.dm); if (r.ad) L.push(' distance ' + r.ad); if (r.maxp !== 4) L.push(' maximum-paths ' + r.maxp); r.nets.forEach(q => L.push(` network ${q.ip} ${q.wild} area ${q.area}`)); L.push('!'); });
@@ -1740,7 +1778,7 @@ function walk(kids, toks) {
   for (;;) {
     if (cur.ghost) return { ok: cur, args: toks.slice(i), all: toks, no };
     if (i >= toks.length) return cur.run && (!cur.p || cur.p.opt || (no && !cur.p.must)) ? { ok: cur, args: [], all: toks, no } : { st: 'inc', at: i, all: toks };
-    if (cur.p) return { ok: cur, args: toks.slice(i), all: toks, no };
+    if (cur.p && !(cur.kids && cur.run && (() => { const w0 = toks[i].t.toLowerCase(); return cur.kids.some(k => !k.neg && (k.k === w0 || (w0.length >= 3 && k.k.startsWith(w0) && !/^[0-9a-f.:-]+$/.test(w0)))); })())) return { ok: cur, args: toks.slice(i), all: toks, no };
     if (!cur.kids) return { st: 'inv', at: i, all: toks };
     const w = toks[i].t.toLowerCase(), cand = cur.kids.filter(k => k.k.startsWith(w));
     if (!cand.length) return { st: 'inv', at: i, all: toks };
@@ -2078,20 +2116,30 @@ function swTree(n, X) {
   };
   const chProt = x => { const o = O(cur()); if (x.no) { delete o.cprot; return; } const v = pargs(x, 'en:lacp|pagp'); if (!v) return; if (o.cg) { const lac = ['active', 'passive'].includes(o.cg.mode), pag = ['desirable', 'auto'].includes(o.cg.mode); if ((v[0] === 'lacp' && !lac) || (v[0] === 'pagp' && !pag)) return x.out(`Command rejected: channel-group mode ${o.cg.mode} conflicts with channel-protocol ${v[0]}.\n`); } o.cprot = v[0]; };
   const guard = f => x => { if (noSvi(x)) return; f(x); };
+  const guardL2 = f => x => { if (noSvi(x)) return; if (cur().x && cur().x.l3 && n.l3) return x.out('% Invalid input detected: this is a routed (Layer 3) port. Use "switchport" to return it to Layer 2 mode.\n'); f(x); };
   add('if', B([
-    ['switchport', guard(x => { if (x.no) return x.out('% Layer-3 (routed) ports are not simulated on this switch model.\n'); delete O(cur()).l3; }), { nono: 0 }],
-    ['switchport mode access', guard(setMode('access'))], ['switchport mode trunk', guard(setMode('trunk'))], ['switchport mode dynamic auto', guard(x => { const o = O(cur()); delete o.mode; delete o.dyn; topoChanged(); })], ['switchport mode dynamic desirable', guard(x => { const o = O(cur()); delete o.mode; if (x.no) delete o.dyn; else o.dyn = 'desirable'; topoChanged(); })],
-    ['switchport access vlan', guard(accVlan), { p: {} }],
-    ['switchport trunk native vlan', guard(natV), { p: {} }], ['switchport trunk allowed vlan', guard(allowed), { p: {} }],
-    ['switchport voice vlan', guard(voiceV), { p: {} }], ['switchport nonegotiate', guard(x => { const o = O(cur()); if (x.no) delete o.nonego; else o.nonego = true; })],
-    ['ip arp inspection trust', guard(x => { const o = O(cur()); if (x.no) delete o.daiTrust; else o.daiTrust = true; })],
-    ['ip verify source', guard(x => { const o = O(cur()); if (x.no) delete o.ipsg; else o.ipsg = true; })],
-    ['switchport port-security', guard(psCmd)], ['switchport port-security maximum', guard(psMax), { p: {} }],
-    ['switchport port-security mac-address', guard(psStatic), { p: {} }], ['switchport port-security mac-address sticky', guard(psSticky), { p: { opt: 1 } }], ['switchport port-security violation', guard(psViol), { p: {} }],
-    ['spanning-tree portfast', guard(portfast)], ['spanning-tree bpduguard enable', guard(x => { const o = O(cur()); if (x.no) delete o.bpdu; else o.bpdu = true; })],
-    ['spanning-tree guard root', guard(x => { const o = O(cur()); if (x.no) delete o.groot; else o.groot = true; })],
-    ['spanning-tree link-type point-to-point', guard(x => { const o = O(cur()); if (x.no) delete o.p2p; else o.p2p = true; })],
-    ['channel-group', guard(chGroup), { p: {} }], ['channel-protocol', guard(chProt), { p: {} }]
+    ['switchport', x => {
+      if (noSvi(x)) return; const p = cur(), o = O(p);
+      if (x.no) {
+        if (!n.l3) return x.out('% Layer-3 (routed) ports are not supported on this switch model.\n');
+        if (o.cg) return x.out(`% Cannot configure ${p.name} as a routed port while it is a member of a channel-group.\n`);
+        if (!o.l3) { o.l3 = true; ['mode', 'vlan', 'native', 'allowed', 'dyn', 'voice', 'nonego', 'ps', 'pf', 'bpdu', 'groot', 'p2p'].forEach(f => delete o[f]); topoChanged(); E.need(); }
+        return;
+      }
+      if (o.l3) { delete o.l3; delete o.acl; p.ip = p.mask = ''; topoChanged(); E.need(); }
+    }, { nono: 0 }],
+    ['switchport mode access', guardL2(setMode('access'))], ['switchport mode trunk', guardL2(setMode('trunk'))], ['switchport mode dynamic auto', guardL2(x => { const o = O(cur()); delete o.mode; delete o.dyn; topoChanged(); })], ['switchport mode dynamic desirable', guardL2(x => { const o = O(cur()); delete o.mode; if (x.no) delete o.dyn; else o.dyn = 'desirable'; topoChanged(); })],
+    ['switchport access vlan', guardL2(accVlan), { p: {} }],
+    ['switchport trunk native vlan', guardL2(natV), { p: {} }], ['switchport trunk allowed vlan', guardL2(allowed), { p: {} }],
+    ['switchport voice vlan', guardL2(voiceV), { p: {} }], ['switchport nonegotiate', guardL2(x => { const o = O(cur()); if (x.no) delete o.nonego; else o.nonego = true; })],
+    ['ip arp inspection trust', guardL2(x => { const o = O(cur()); if (x.no) delete o.daiTrust; else o.daiTrust = true; })],
+    ['ip verify source', guardL2(x => { const o = O(cur()); if (x.no) delete o.ipsg; else o.ipsg = true; })],
+    ['switchport port-security', guardL2(psCmd)], ['switchport port-security maximum', guardL2(psMax), { p: {} }],
+    ['switchport port-security mac-address', guardL2(psStatic), { p: {} }], ['switchport port-security mac-address sticky', guardL2(psSticky), { p: { opt: 1 } }], ['switchport port-security violation', guardL2(psViol), { p: {} }],
+    ['spanning-tree portfast', guardL2(portfast)], ['spanning-tree bpduguard enable', guardL2(x => { const o = O(cur()); if (x.no) delete o.bpdu; else o.bpdu = true; })],
+    ['spanning-tree guard root', guardL2(x => { const o = O(cur()); if (x.no) delete o.groot; else o.groot = true; })],
+    ['spanning-tree link-type point-to-point', guardL2(x => { const o = O(cur()); if (x.no) delete o.p2p; else o.p2p = true; })],
+    ['channel-group', guardL2(chGroup), { p: {} }], ['channel-protocol', guardL2(chProt), { p: {} }]
   ]));
   /* SVI addressing */
   add('if', B([['ip address', x => ipAddrCmd(X, x), { p: {} }]]));
@@ -2109,7 +2157,7 @@ function swTree(n, X) {
   const nm = p => abx(p.name);
   const showVlan = x => {
     const a = x.args, w = a[0] ? pval('en:brief|id|name', a[0]) : 'brief'; if (a[0] && !w) return x.inv(0);
-    const row = v => { const ps = v >= 1002 && v <= 1005 ? [] : ports().filter(p => n.eff(p) === 'access' && ((p.x && p.x.vlan) || 1) === v).map(nm), L = wrapList(ps, 31), st = v >= 1002 && v <= 1005 ? 'act/unsup' : 'active'; return `${pad(v, 4)} ${pad(xc.vlans[v].name, 32)} ${pad(st, 9)} ${L[0] || ''}\n` + L.slice(1).map(s => ' '.repeat(48) + s + '\n').join(''); };
+    const row = v => { const ps = v >= 1002 && v <= 1005 ? [] : ports().filter(p => !(p.x && p.x.l3 && n.l3) && n.eff(p) === 'access' && ((p.x && p.x.vlan) || 1) === v).map(nm), L = wrapList(ps, 31), st = v >= 1002 && v <= 1005 ? 'act/unsup' : 'active'; return `${pad(v, 4)} ${pad(xc.vlans[v].name, 32)} ${pad(st, 9)} ${L[0] || ''}\n` + L.slice(1).map(s => ' '.repeat(48) + s + '\n').join(''); };
     const hdr = 'VLAN Name                             Status    Ports\n---- -------------------------------- --------- -------------------------------\n';
     const ids = Object.keys(xc.vlans).map(Number).sort((q, r) => q - r);
     if (w === 'brief') { x.out(hdr + ids.map(row).join('')); return; }
@@ -2129,7 +2177,7 @@ function swTree(n, X) {
   };
   const modeTxt = p => { const e = n.eff(p), x = p.x || {}; return x.mode ? 'static ' + e : 'dynamic ' + (x.dyn || 'auto'); };
   const stText = p => !p.admin ? 'disabled' : p.err ? 'err-disabled' : p.ok ? 'connected' : 'notconnect';
-  const ifStatus = (x, only) => { x.out('Port      Name               Status       Vlan       Duplex  Speed Type\n'); (only || ports()).forEach(p => { const m = n.eff(p), vv = m === 'trunk' ? 'trunk' : String((p.x && p.x.vlan) || 1), g = /^Gig/i.test(p.name); x.out(`${pad(nm(p), 9)} ${pad((p.desc || '').slice(0, 18), 18)} ${pad(stText(p), 12)} ${pad(vv, 10)} ${pad(p.dpx && p.dpx !== 'auto' ? p.dpx : 'auto', 7)} ${pad(p.spd && p.spd !== 'auto' ? p.spd : 'auto', 5)} ${g ? '10/100/1000BaseTX' : '10/100BaseTX'}\n`); }); };
+  const ifStatus = (x, only) => { x.out('Port      Name               Status       Vlan       Duplex  Speed Type\n'); (only || ports()).forEach(p => { const m = n.eff(p), vv = (p.x && p.x.l3 && n.l3) ? 'routed' : m === 'trunk' ? 'trunk' : String((p.x && p.x.vlan) || 1), g = /^Gig/i.test(p.name); x.out(`${pad(nm(p), 9)} ${pad((p.desc || '').slice(0, 18), 18)} ${pad(stText(p), 12)} ${pad(vv, 10)} ${pad(p.dpx && p.dpx !== 'auto' ? p.dpx : 'auto', 7)} ${pad(p.spd && p.spd !== 'auto' ? p.spd : 'auto', 5)} ${g ? '10/100/1000BaseTX' : '10/100BaseTX'}\n`); }); };
   const ifTrunk = x => {
     const T = ports().filter(p => p.admin && n.eff(p) === 'trunk'); if (!T.length) return; const act = v => Object.keys(xc.vlans).map(Number).filter(q => q < 1002 || xc.vlans[q]);
     x.out('Port        Mode         Encapsulation  Status        Native vlan\n' + T.map(p => `${pad(nm(p), 11)} ${pad(p.x && p.x.mode ? 'on' : ((p.x && p.x.dyn) || 'auto'), 12)} ${pad('802.1q', 14)} ${pad(p.ok ? 'trunking' : 'not-trunking', 13)} ${n.natV(p)}\n`).join(''));
@@ -2140,7 +2188,7 @@ function swTree(n, X) {
   };
   const ifSwitchport = (x, only) => {
     const L = only ? [only] : ports();
-    L.forEach(p => { const o = p.x || {}, e = n.eff(p); x.out(`Name: ${nm(p)}\nSwitchport: Enabled\nAdministrative Mode: ${modeTxt(p)}\nOperational Mode: ${p.ok ? (o.mode ? 'static ' : '') + e : 'down'}\nAdministrative Trunking Encapsulation: dot1q\nOperational Trunking Encapsulation: ${e === 'trunk' && p.ok ? 'dot1q' : 'native'}\nNegotiation of Trunking: ${o.nonego ? 'Off' : 'On'}\nAccess Mode VLAN: ${o.vlan || 1} (${vlanName(n, o.vlan || 1)})\nTrunking Native Mode VLAN: ${n.natV(p)} (${vlanName(n, n.natV(p))})\nAdministrative Native VLAN tagging: enabled\nVoice VLAN: ${o.voice || 'none'}\nTrunking VLANs Enabled: ${(() => { const s = n.allowedSet(p); return s ? (fmtVl([...s].sort((q, r) => q - r)) || 'NONE') : 'ALL'; })()}\nProtected: false\nAppliance trust: none\n\n`); });
+    L.forEach(p => { const o = p.x || {}, e = n.eff(p); if (o.l3 && n.l3) { x.out(`Name: ${nm(p)}\nSwitchport: Disabled\n\n`); return; } x.out(`Name: ${nm(p)}\nSwitchport: Enabled\nAdministrative Mode: ${modeTxt(p)}\nOperational Mode: ${p.ok ? (o.mode ? 'static ' : '') + e : 'down'}\nAdministrative Trunking Encapsulation: dot1q\nOperational Trunking Encapsulation: ${e === 'trunk' && p.ok ? 'dot1q' : 'native'}\nNegotiation of Trunking: ${o.nonego ? 'Off' : 'On'}\nAccess Mode VLAN: ${o.vlan || 1} (${vlanName(n, o.vlan || 1)})\nTrunking Native Mode VLAN: ${n.natV(p)} (${vlanName(n, n.natV(p))})\nAdministrative Native VLAN tagging: enabled\nVoice VLAN: ${o.voice || 'none'}\nTrunking VLANs Enabled: ${(() => { const s = n.allowedSet(p); return s ? (fmtVl([...s].sort((q, r) => q - r)) || 'NONE') : 'ALL'; })()}\nProtected: false\nAppliance trust: none\n\n`); });
   };
   const psShow = x => {
     const a = x.args;
@@ -2190,11 +2238,12 @@ function swTree(n, X) {
   const ipBriefSw = x => {
     x.out('Interface              IP-Address      OK? Method Status                Protocol\n');
     const row = (nme, ip, st) => x.out(`${pad(nme, 22)} ${pad(ip || 'unassigned', 15)} YES ${ip ? 'manual' : 'unset '} ${pad(st[0], 21)} ${st[1]}\n`);
-    sviBrief().forEach(s => row(s.name, s.ip, ifState(s))); ports().forEach(p => row(p.name, '', ifState(p)));
+    sviBrief().forEach(s => row(s.name, s.ip, ifState(s))); ports().forEach(p => row(p.name, p.x && p.x.l3 ? p.ip : '', ifState(p)));
   };
   const v6if = x => { const a = x.args; if (a.length < 2) return x.inc(); const v = pval('vlan', a[1]); if (!v) return x.inv(1); const s = n.svis[v]; if (!s) return x.out(`% Invalid interface\n`); const st = ifState(s); x.out(`Vlan${v} is ${st[0]}, line protocol is ${st[1]}\n  IPv6 is enabled, link-local address is ${ll6(s.mac)}\n  No Virtual link-local address(es):\n  No global unicast address is configured\n  Joined group address(es):\n    FF02::1\n    FF02::2\n  MTU is 1500 bytes\n`); };
   const showIfs = x => {
     const a = x.args; if (a.length > 1 && a[a.length - 1].length > 1 && 'status'.startsWith(a[a.length - 1].toLowerCase())) { const sp = ifSplit(a.slice(0, -1)), pp = sp && physIf(n, sp.t, sp.num); if (!pp) return x.inv(0); return ifStatus(x, [pp]); }
+    if (a.length > 1 && a[a.length - 1].length > 1 && 'switchport'.startsWith(a[a.length - 1].toLowerCase())) { const sp = ifSplit(a.slice(0, -1)), pp = sp && physIf(n, sp.t, sp.num); if (!pp) return x.inv(0); return ifSwitchport(x, pp); }
     if (a.length) { const w = pval('en:status|trunk|switchport', a[0]); if (w === 'status') return ifStatus(x); if (w === 'trunk') return ifTrunk(x); if (w === 'switchport') { if (a.length > 1) { const s = ifSplit(a.slice(1)), p = s && physIf(n, s.t, s.num); if (!p) return x.inv(1); return ifSwitchport(x, p); } return ifSwitchport(x); } }
     showIfDetail(X, x);
   };
@@ -2215,9 +2264,10 @@ function swTree(n, X) {
 }
 
 /* ════════ PT-syntax layer 5: IP addressing, interface views, routing/ACL/DHCP/NAT/protocol commands, show family ════════ */
-function allIf(n) { return n.kind === 'switch' ? Object.values(n.svis) : locals(n); }
+function allIf(n) { return n.kind === 'switch' ? [...Object.values(n.svis), ...(n.l3 ? n.rtPorts() : [])] : locals(n); }
 function ipAddrCmd(X, x) {
   const { n } = X, p = n.cur, a = x.args;
+  if (n.kind === 'switch' && n.l3 && !p.svi && !p.lo && !p.po && !p.tun && !(p.x && p.x.l3)) return x.out('% Invalid input detected. This is a Layer 2 (switchport) interface; use "no switchport" to make it a routed port first.\n');
   if (x.no) { p.ip = p.mask = ''; topoChanged(); E.need(); return; }
   if (a.length < 2) return x.inc(); if (a.length > 2) return x.inv(2);
   if (!hostIp(a[0])) return x.inv(0); if (!goodMask(a[1])) return x.inv(1);
@@ -2688,6 +2738,26 @@ function rtTree(n, X) {
 }
 
 /* ════════ PT-syntax layer 7: routing-protocol config modes + router show/clear/debug commands ════════ */
+/* interface-level OSPF commands (ip ospf cost / priority / hello-interval / dead-interval / <pid> area <a> ...) for SVIs and routed ports of an L3 switch */
+function l3swOspfIf(n, X) {
+  const { add } = X, cur = () => n.cur, O = p => px(p);
+  const ospfArea = x => { const o = O(cur()); if (x.no) { delete o.ospf; topoChanged(); return; } const v = pargs(x, 'int:1-65535 lit:area word'); if (!v) return; if (!/^\d+$/.test(v[2]) && ip2n(v[2]) === null) return x.inv(2); o.ospf = o.ospf || {}; o.ospf.pid = v[0]; o.ospf.area = v[2]; topoChanged(); };
+  const ospfK = (k, lo, hi) => x => { const o = O(cur()); o.ospf = o.ospf || {}; if (x.no) { delete o.ospf[k]; topoChanged(); return; } const v = pargs(x, `int:${lo}-${hi}`); if (v) { o.ospf[k] = v[0]; topoChanged(); } };
+  const ospfAuth = x => { const o = O(cur()); o.ospf = o.ospf || {}; if (x.no) { delete o.ospf.auth; topoChanged(); return; } o.ospf.auth = 'md'; topoChanged(); };
+  const ospfMd = x => { const o = O(cur()); o.ospf = o.ospf || {}; if (x.no) { delete o.ospf.md; topoChanged(); return; } const v = pargs(x, 'int:1-255 lit:md5 word'); if (v) { o.ospf.md = { id: v[0], key: v[2] }; topoChanged(); } };
+  const sub = (x, h, args, off) => h({ ...x, args, inv: k => x.inv(k + off), inc: x.inc });
+  const ospfIf = x => {
+    const p = cur(); if (p && !p.svi && !p.lo && !(p.x && p.x.l3)) return x.out('% Invalid input detected. This is a Layer 2 (switchport) interface; use "no switchport" to make it a routed port.\n');
+    const a = x.args; if (!a.length) return x.inc(); if (/^\d+$/.test(a[0])) return ospfArea(x);
+    const w = pval('en:cost|priority|hello-interval|dead-interval|authentication|message-digest-key', a[0]); if (!w) return x.inv(0);
+    const r = a.slice(1);
+    if (w === 'cost') return sub(x, ospfK('cost', 1, 65535), r, 1); if (w === 'priority') return sub(x, ospfK('prio', 0, 255), r, 1);
+    if (w === 'hello-interval') return sub(x, ospfK('hello', 1, 65535), r, 1); if (w === 'dead-interval') return sub(x, ospfK('dead', 1, 65535), r, 1);
+    if (w === 'authentication') { if (r.length !== 1 || !'message-digest'.startsWith(r[0].toLowerCase())) return r.length ? x.inv(1) : x.inc(); return ospfAuth(x); }
+    return sub(x, ospfMd, r, 1);
+  };
+  add('if', B([['ip ospf', ospfIf, { p: {} }]]));
+}
 function routerProtoTree(n, X) {
   const { N, xc, add, common } = X, A = X.A;
   if (A) return;
@@ -2757,7 +2827,9 @@ function cdpNbrs(n) {
   for (const p of n.ports) { if (p.con || !p.ok || (p.x && p.x.cdp === false)) continue; const q = p.peer, m = q && q.n; if (!m || !m.xc || !m.xc.cdp || (q.x && q.x.cdp === false)) continue; if (m.kind !== 'router' && m.kind !== 'switch' && m.kind !== 'asa') continue; o.push({ p, q, m }); }
   return o;
 }
-function routerShowTree(n, X, ipBrief) {
+const BB = B;
+function routerShowTree(n, X, ipBrief, only) {
+  const B = only ? (l => BB(l.filter(e => only.test(e[0])))) : BB;
   const { xc, add } = X, A = X.A, SWK = n.kind === 'switch';
   const ntpShow = x => ntpShowOut(n, xc, x), snmpShow = x => snmpShowOut(xc, x);
   const lines = (x, s) => x.out(s);
@@ -2837,8 +2909,15 @@ function routerShowTree(n, X, ipBrief) {
   const protos = x => { x.out('Global values:\n  Internet Protocol routing is enabled\n'); locals(n).filter(p => !p.con).forEach(p => { const st = ifState(p); x.out(`${p.name} is ${st[0]}, line protocol is ${st[1]}\n${p.ip ? `  Internet address is ${pfxOf(p)}\n` : ''}`); }); };
   const dhcpB = x => { x.out('Bindings from all pools not associated with VRF:\nIP address      Client-ID/\t\t Lease expiration        Type\n                Hardware address/\n                User name\n'); Object.values(xc.dhcp.pools).forEach(P => Object.entries(P.leases).forEach(([m, ip]) => x.out(`${pad(ip, 15)} ${pad(m.toLowerCase(), 24)} ${pad(P.lease === 'infinite' ? 'Infinite' : 'Mar 02 1993 12:00 AM', 23)} Automatic\n`))); };
   const natTr = x => { const R2 = Object.values(n.nt); if (!R2.length && !xc.nat.statics.length) return; x.out('Pro Inside global      Inside local       Outside local      Outside global\n'); xc.nat.statics.forEach(s => x.out(`--- ${pad(s.glob, 18)} ${pad(s.loc, 18)} ---                ---\n`)); const seen = {}, cn = {}; R2.forEach(f => { const key = [f.proto, f.glob, f.loc, f.dst].join('|'); if (seen[key]) return; seen[key] = 1; const ck = f.proto + '|' + f.glob, i = cn[ck] = (cn[ck] || 0) + 1, id = f.proto === 'icmp' ? i : 1023 + i, ov = (xc.nat.rules || []).some(r => r.ovl); x.out(`${pad(f.proto, 3)} ${pad(ov ? f.glob + ':' + id : f.glob, 18)} ${pad(ov ? f.loc + ':' + id : f.loc, 18)} ${pad(f.dst && ov ? f.dst + ':' + id : '---', 18)} ${f.dst && ov ? f.dst + ':' + id : '---'}\n`); }); };
-  const natSt = x => { const ins = n.ports.filter(p => p.x && p.x.nat === 'inside').map(p => p.name), outs = n.ports.filter(p => p.x && p.x.nat === 'outside').map(p => p.name); x.out(`Total active translations: ${Object.keys(n.nt).length + xc.nat.statics.length} (${xc.nat.statics.length} static, ${Object.keys(n.nt).length} dynamic; ${Object.keys(n.nt).length} extended)\nPeak translations: ${Object.keys(n.nt).length}\nOutside interfaces:\n  ${outs.join(', ')}\nInside interfaces: \n  ${ins.join(', ')}\nHits: 0  Misses: 0\nExpired translations: 0\nDynamic mappings:\n` + xc.nat.rules.map(r => `-- Inside Source\n[Id: 1] access-list ${r.acl} ${r.kind === 'iface' ? 'interface ' + r.ifn : 'pool ' + r.pool} refcount 0\n`).join('')); };
-  const rid = r => { const cr = ridCfg4(r); if (cr) return cr; const l = Object.keys(r.xc.lo).map(z => lopt(r, z).ip).filter(Boolean).sort((a, b) => ip2n(b) - ip2n(a))[0]; return l || locals(r).map(z => z.ip).filter(Boolean).sort((a, b) => ip2n(b) - ip2n(a))[0] || '0.0.0.0'; };
+  const natSt = x => {
+    const ins = n.ports.filter(p => p.x && p.x.nat === 'inside').map(p => p.name), outs = n.ports.filter(p => p.x && p.x.nat === 'outside').map(p => p.name), N = natCt(n), F = natUniq(n), st = xc.nat.statics.length, tot = F.length + st;
+    if (tot > N.peak) { N.peak = tot; N.peakT = Date.now(); } const ago = N.peakT ? Math.round((Date.now() - N.peakT) / 1000) : 0, hms = s => [Math.floor(s / 3600), Math.floor(s % 3600 / 60), s % 60].map(v => String(v).padStart(2, '0')).join(':');
+    x.out(`Total active translations: ${tot} (${st} static, ${F.length} dynamic; ${F.length} extended)\nPeak translations: ${N.peak}, occurred ${hms(ago)} ago\nOutside interfaces:\n  ${outs.join(', ')}\nInside interfaces: \n  ${ins.join(', ')}\nHits: ${N.hits}  Misses: ${N.miss}\nCEF Translated packets: ${N.hits}, CEF Punted packets: 0\nExpired translations: ${N.exp}\nDynamic mappings:\n` + xc.nat.rules.map((r, i) => {
+      const mine = F.filter(f => f.ri === i); let s = `-- Inside Source\n[Id: ${i + 1}] access-list ${r.acl} ${r.kind === 'iface' ? 'interface ' + r.ifn : 'pool ' + r.pool} refcount ${mine.length}\n`;
+      const P = r.kind === 'pool' && xc.nat.pools[r.pool]; if (P) { const total = ip2n(P.e) - ip2n(P.s) + 1, used = new Set(mine.map(f => f.glob)).size; s += ` pool ${r.pool}: netmask ${P.mask}\n\tstart ${P.s} end ${P.e}\n\ttype generic, total addresses ${total}, allocated ${used} (${Math.round(used * 100 / total)}%), misses ${N.pm[r.pool] | 0}\n`; }
+      return s; }).join(''));
+  };
+  const rid = r => { const cr = ridCfg4(r); if (cr) return cr; const l = Object.keys(r.xc.lo).map(z => lopt(r, z).ip).filter(Boolean).sort((a, b) => ip2n(b) - ip2n(a))[0]; return l || rIfs(r).map(z => z.ip).filter(Boolean).sort((a, b) => ip2n(b) - ip2n(a))[0] || '0.0.0.0'; };
   dynEnsure();
   const ospfShow = x => { const ks = Object.keys(xc.ospf); if (!ks.length) return; ks.forEach(k => { const C = xc.ospf[k]; x.out(` Routing Process "ospf ${k}" with ID ${rid(n)}\n Supports only single TOS(TOS0) routes\n Supports opaque LSA\n It is an area border router\n Number of areas in this router is ${new Set(protoIfs(n, 'ospf', k).map(i => i.area)).size}. ${new Set(protoIfs(n, 'ospf', k).map(i => i.area)).size} normal 0 stub 0 nssa\n Maximum path: ${C.maxp}\n`); }); };
   const ospfNbr = x => { const L = (n.nbr && n.nbr.ospf) || []; if (!L.length) return; x.out('Neighbor ID     Pri   State           Dead Time   Address         Interface\n'); L.forEach(e => x.out(`${pad(e.rid, 15)} ${pad(e.prio, 5)} ${pad('FULL/' + (e.prio >= 1 ? 'DR' : 'DROTHER'), 15)} 00:00:36    ${pad(e.ip, 15)} ${e.ifn}\n`)); };
@@ -2871,7 +2950,7 @@ function routerShowTree(n, X, ipBrief) {
     ['show ip arp inspection', x => { const d = xc.dai || { vlans: [], counters: 0 }; x.out(`Dynamic ARP Inspection: VLANs ${d.vlans.length ? fmtVl(d.vlans) : 'none'}\nDropped ARP packets: ${d.counters || 0}\nTrusted interfaces: ${n.ports.filter(p=>p.x&&p.x.daiTrust).map(p=>p.name).join(', ') || 'none'}\n`); }],
     ['show ip verify source', x => { const a=n.ports.filter(p=>p.x&&p.x.ipsg); x.out(`IP Source Guard enabled on ${a.length} interfaces: ${a.map(p=>p.name).join(', ') || 'none'}\nBindings available: ${Object.keys((xc.snoop&&xc.snoop.bind)||{}).length + ((xc.snoop&&xc.snoop.stat)||[]).length}\nDropped packets: ${xc.ipsgDrop || 0}\n`); }],
     ['show terminal', term], ['show controllers', ctl, { p: { opt: 1 } }],
-     ['clear arp-cache', clrArp], ['clear ipv6 neighbors', v6clr, { p: { opt: 1 } }], ['clear ipv6 route', v6clrRoute, { p: { opt: 1 } }], ['clear ip nat translation', x => { clrNat(x); }, { p: { opt: 1 } }], ['clear ip route', clrRt, { p: { opt: 1 } }],
+     ['clear arp-cache', clrArp], ['clear ipv6 neighbors', v6clr, { p: { opt: 1 } }], ['clear ipv6 route', v6clrRoute, { p: { opt: 1 } }], ['clear ip nat translation', x => { clrNat(x); }, { p: { opt: 1 } }], ['clear ip nat statistics', x => { n._nc = undefined; }], ['clear ip route', clrRt, { p: { opt: 1 } }],
      ['debug ip icmp', dbgOn('icmp')], ['debug ip routing', dbgOn('routing')], ['debug ip ospf adj', dbgOn('ospf-adj')], ['debug ip rip', dbgOn('rip')], ['debug ipv6 icmp', dbgOn('icmp6')], ['debug ipv6 nd', dbgOn('nd6')], ['debug ipv6 routing', dbgOn('routing6')], ['undebug all', x => { n.dbgs = new Set(); x.out('All possible debugging has been turned off\n'); }],
      ['traceroute', x => {
        const a = x.args; if (!a.length) return x.out('% Extended traceroute dialog is not supported; use "traceroute <address>" or "traceroute ipv6 <address>".\n');
@@ -2941,7 +3020,7 @@ function showIpRouteCmd(n) {
     const w = x.args[0] ? pval('en:connected|static|ospf|rip|eigrp', x.args[0]) : null; if (x.args[0] && !w) return x.inv(0); if (x.args.length > 1) return x.inv(1);
     const code = { connected: ['C', 'L'], static: ['S', 'S*'], ospf: ['O'], rip: ['R'], eigrp: ['D'] }[w] || null, out = [];
     const sw = n.kind === 'switch';
-    if (!w || w === 'connected') (sw ? Object.values(n.svis) : locals(n)).forEach(p => { if (p.ip && (sw ? n.svUp(p) : p.ok) && p.mask !== '255.255.255.255') out.push({ code: 'L', net: p.ip, len: 32, txt: `is directly connected, ${p.name}` }); });
+    if (!w || w === 'connected') (sw ? n.l3ifs() : locals(n)).forEach(p => { if (p.ip && (sw ? n.l3up(p) : p.ok) && p.mask !== '255.255.255.255') out.push({ code: 'L', net: p.ip, len: 32, txt: `is directly connected, ${p.name}` }); });
     n.cands().forEach(r => { const len = m2p(r.mask), t = r.code === 'C' ? `is directly connected, ${r.p.name}` : r.code === 'S' ? (r.nh ? `[${r.ad}/0] via ${r.nh}` : `is directly connected, ${r.p.name}`) : `[${r.ad}/${r.m}] via ${r.nh}, 00:00:10, ${r.p.name}`; out.push({ code: r.code === 'S' && len === 0 ? 'S*' : r.code, net: r.net, len, txt: t, nh: r.nh }); });
     const rows = (code ? out.filter(r => code.includes(r.code)) : out).sort((a, b) => ip2n(a.net) - ip2n(b.net) || a.len - b.len), d = out.find(r => r.len === 0 && r.nh);
     x.out('Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP\n       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area\n       * - candidate default, U - per-user static route, o - ODR\n       P - periodic downloaded static route\n\n' + (d ? `Gateway of last resort is ${d.nh} to network 0.0.0.0\n\n` : 'Gateway of last resort is not set\n\n'));
@@ -2965,7 +3044,7 @@ function labTree(n, X) {
     add('conf', B([['access-list', numAcl, { p: {} }], ['ip access-list', namedAcl, { p: {} }]]));
     add('sacl', [...aceNodes(false), ...common('conf')]); add('eacl', [...aceNodes(true), ...common('conf')]);
     add('priv', B([['show access-lists', x => aclShow(n, x), { p: { opt: 1 } }], ['show ip access-lists', x => aclShow(n, x), { p: { opt: 1 } }]]));
-    add('if', B([['ip access-group', x => { const p = n.cur; if (!p || (p.svi && !n.l3)) return x.out(NS_MSG); const o = px(p); if (!p.svi && (x.no ? (x.args[x.args.length - 1] || '') : (x.args[1] || '')).toLowerCase() === 'out') return x.out('% Output ACLs are not supported on Layer 2 switch ports\n'); if (x.no) { const w = pval('en:in|out', x.args[x.args.length - 1] || ''); if (o.acl && w) delete o.acl[w]; return; } const v = pargs(x, 'word en:in|out'); if (!v) return; o.acl = o.acl || {}; o.acl[v[1]] = v[0]; }, { p: {} }]]));
+    add('if', B([['ip access-group', x => { const p = n.cur; if (!p || (p.svi && !n.l3)) return x.out(NS_MSG); const o = px(p); if (!p.svi && !(p.x && p.x.l3) && (x.no ? (x.args[x.args.length - 1] || '') : (x.args[1] || '')).toLowerCase() === 'out') return x.out('% Output ACLs are not supported on Layer 2 switch ports\n'); if (x.no) { const w = pval('en:in|out', x.args[x.args.length - 1] || ''); if (o.acl && w) delete o.acl[w]; return; } const v = pargs(x, 'word en:in|out'); if (!v) return; o.acl = o.acl || {}; o.acl[v[1]] = v[0]; }, { p: {} }]]));
   }
   add('priv', B([['show flash', x => x.out(flashList(n)), { u: 0 }], ['show flash:', x => x.out(flashList(n))]]));
   if (R) add('priv', B([['show ip route', showIpRouteCmd(n), { p: { opt: 1 }, u: 1 }]]));
@@ -2973,7 +3052,11 @@ function labTree(n, X) {
     add('conf', B([['ip routing', x => { xc.iprt = !x.no; topoChanged(); }], ['ip route', ipRouteSw(n), { p: { must: 1 } }]]));
     add('if', B([['switchport trunk encapsulation', x => { const v = pargs(x, 'en:dot1q|isl|negotiate'); if (!v) return; if (n.cur.svi) return x.inv(0); const o = px(n.cur); if (x.no) delete o.encap; else o.encap = v[0]; }, { p: {} }]]));
     add('priv', B([['show ip route', showIpRouteCmd(n), { p: { opt: 1 }, u: 1 }]]));
+    routerProtoTree(n, X); l3swOspfIf(n, X);
+    routerShowTree(n, X, null, /^show ip (ospf|eigrp|rip|protocols)/);
+    add('priv', B([['clear ip route', () => { topoChanged(); DYN.ver = -1; }, { p: { opt: 1 } }]]));
   }
+  extraTree(n, X);
 }
 
 /* ════════ PT-syntax layer 8: ASA commands, tree assembly, executor, config snapshot/rendering ════════ */
@@ -3291,10 +3374,133 @@ function snmpRate(p) {
   R.fi += a * ((v.rb - R.rb) * 8 / dt - R.fi); R.fo += a * ((v.tb - R.tb) * 8 / dt - R.fo); R.gi += a * ((v.rp - R.rp) / dt - R.gi); R.go += a * ((v.tp - R.tp) / dt - R.go);
   R.bi = Math.round(R.fi); R.bo = Math.round(R.fo); R.pi = Math.round(R.gi); R.po = Math.round(R.go); R.t = now; Object.assign(R, v);
 }
+/* ───────── NAT counters helper, CPU utilisation model (+ rising/falling threshold notifications), temperature / ENVMON model, NAT aging ───────── */
+const natCt = n => n._nc || (n._nc = { hits: 0, miss: 0, exp: 0, peak: 0, peakT: 0, pm: {} });
+const natUniq = n => { const seen = {}; return Object.values(n.nt || {}).filter(f => { const k = [f.proto, f.glob, f.loc, f.dst].join('|'); if (seen[k]) return false; seen[k] = 1; return true; }); };
+function natExpire(n) {
+  if (!n.nt || !n.xc || !n.xc.nat) return; const K = Object.keys(n.nt); if (!K.length) return;
+  const now = Date.now(), ov = n.xc.nat.rules.some(r => r.ovl), N = natCt(n);
+  for (const k of K) { const f = n.nt[k], lim = (ov ? (f.proto === 'icmp' ? 60 : f.proto === 'udp' ? 300 : 86400) : 86400) * 1000; if (now - (f.rt || now) > lim) { delete n.nt[k]; N.exp++; } }
+}
+const cpuHit = (n, w) => { if (n) n._cu = (n._cu || 0) + (w || 1); };
+const CPU_PROC = [[1, 'Chunk Manager', 1, 0], [2, 'Load Meter', 1, 0], [3, 'Check heaps', 2, 0], [4, 'Pool Manager', 1, 0], [5, 'Timers', 1, 0], [6, 'ARP Input', 6, 0], [7, 'IP Input', 34, 0], [8, 'CDP Protocol', 5, 0], [9, 'IP SNMP', 8, 0], [10, 'SNMP ENGINE', 12, 0], [11, 'Spanning Tree', 10, 1], [12, 'Exec', 3, 0], [13, 'Per-Second Jobs', 2, 0], [14, 'Net Background', 4, 0]];
+const cpuProcs = n => CPU_PROC.filter(p => !p[3] || n.kind === 'switch');
+const cpuM = n => n._cm || (n._cm = { t: Date.now(), tot: 3, intr: 1, u5: 3, u60: 3, u300: 3, hist: [], pr: {}, p60: {}, p300: {}, rt: {}, inv: {}, rs: {} });
+const cpuIsDev = n => !!(n && n.xc && (n.kind === 'router' || n.kind === 'switch'));
+const envSt = n => n._env || (n._env = { T: 31, fan: true, sim: null, st: 0, fr: true });
+const envLim = n => n.kind === 'switch' ? { y: 66, r: 76 } : { y: 60, r: 70 };
+function cpuThrFire(n, ty, rising, v, M) {
+  const lbl = ty === 'process' ? 'Process' : ty === 'interrupt' ? 'Interrupt' : 'Total', tot = Math.round(M.tot), intr = Math.round(M.intr);
+  const top = cpuProcs(n).map(p => [p[0], M.pr[p[0]] || 0]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(q => `${q[0]}/${Math.round(q[1])}%`).join(', ');
+  if (rising) sysLog(n, 1, 'SYS-1-CPURISINGTHRESHOLD', `Threshold: ${lbl} CPU Utilization(Total/Intr): ${tot}%/${intr}%, Top 3 processes(Pid/Util):  ${top}`);
+  else sysLog(n, 6, 'SYS-6-CPUFALLINGTHRESHOLD', `Threshold: ${lbl} CPU Utilization(Total/Intr) ${tot}%/${intr}%.`);
+  snmpNotify(n, rising ? 'cpurise' : 'cpufall', null, [{ oid: '1.3.6.1.4.1.9.9.109.1.1.1.1.2.1', t: 'Integer', v: 1 }, { oid: '1.3.6.1.4.1.9.9.109.1.1.1.1.10.1', t: 'Gauge', v: Math.round(v) }, { oid: '1.3.6.1.4.1.9.9.109.1.1.1.1.11.1', t: 'Gauge', v: intr }]);
+}
+function envTick(n, dt, M) {
+  const e = envSt(n), L = envLim(n), tg = 30 + M.u60 * 0.12 + (e.fan ? 0 : 28) + Math.sin(Date.now() / 90000 + n.id) * 1.2;
+  if (e.sim != null) e.T = e.sim; else e.T += (tg - e.T) * (1 - Math.exp(-dt / 25));
+  const T = Math.round(e.T); let st;
+  if (T >= L.r) st = 2; else if (T >= L.y) st = (e.st === 2 && T >= L.r - 2) ? 2 : 1; else st = (e.st >= 1 && T >= L.y - 2) ? 1 : 0;
+  if (st !== e.st) {
+    const was = e.st; e.st = st;
+    if (st === 2) sysLog(n, 1, 'ENVMON-1-TEMP_RED', `System temperature ${T}C exceeds the red threshold (${L.r}C) - shutdown imminent`);
+    else if (st === 1) sysLog(n, 4, 'ENVMON-4-TEMP_YELLOW', was === 2 ? `System temperature ${T}C fell below the red threshold (${L.r}C)` : `System temperature ${T}C exceeds the yellow threshold (${L.y}C)`);
+    else sysLog(n, 6, 'ENVMON-6-TEMP_NORMAL', `System temperature is back to normal (${T}C)`);
+    snmpNotify(n, 'envtemp', null, [{ oid: '1.3.6.1.4.1.9.9.13.1.3.1.2.1', t: 'String', v: 'SYSTEM' }, { oid: '1.3.6.1.4.1.9.9.13.1.3.1.3.1', t: 'Gauge', v: T }, { oid: '1.3.6.1.4.1.9.9.13.1.3.1.4.1', t: 'Gauge', v: st === 2 ? L.r : L.y }, { oid: '1.3.6.1.4.1.9.9.13.1.3.1.6.1', t: 'Integer', v: st === 0 ? 1 : st === 1 ? 2 : 3 }]);
+  }
+  if (e.fan !== e.fr) {
+    e.fr = e.fan;
+    if (!e.fan) sysLog(n, 1, 'ENVMON-1-FAN_FAIL', 'Fan 1 has failed - replace the fan tray'); else sysLog(n, 6, 'ENVMON-6-FAN_OK', 'Fan 1 is operating normally');
+    snmpNotify(n, 'envfan', null, [{ oid: '1.3.6.1.4.1.9.9.13.1.4.1.2.1', t: 'String', v: 'Fan 1' }, { oid: '1.3.6.1.4.1.9.9.13.1.4.1.3.1', t: 'Integer', v: e.fan ? 1 : 6 }]);
+  }
+}
+function cpuTick(n) {
+  if (!cpuIsDev(n) || n.on === false) return;
+  const M = cpuM(n), now = Date.now(), dt = (now - M.t) / 1000; if (dt < 0.9) return; M.t = now;
+  const units = n._cu || 0; n._cu = 0; const rate = units / dt; let intr, tot;
+  if (n._cpuSim != null) { tot = n._cpuSim; intr = Math.min(tot, Math.round(tot * 0.08)); }
+  else { intr = Math.min(40, Math.round(rate * 0.1)); tot = Math.round((n.kind === 'switch' ? 2 : 3) + intr + rate * 0.9 + (Math.random() - 0.5) * 1.6); tot = Math.max(1, Math.min(100, tot)); intr = Math.min(intr, tot - 1); }
+  M.tot = tot; M.intr = intr;
+  const a = s => 1 - Math.exp(-dt / s); M.u5 += a(5) * (tot - M.u5); M.u60 += a(60) * (tot - M.u60); M.u300 += a(300) * (tot - M.u300);
+  const P = cpuProcs(n), W = P.reduce((s, p) => s + p[2], 0), pl = Math.max(0, tot - intr);
+  P.forEach(p => {
+    const id = p[0], u = pl * p[2] / W; M.pr[id] = u;
+    const q1 = M.p60[id] ?? u, q5 = M.p300[id] ?? u; M.p60[id] = q1 + a(60) * (u - q1); M.p300[id] = q5 + a(300) * (u - q5);
+    M.rt[id] = (M.rt[id] || 0) + u / 100 * dt * 1000; M.inv[id] = (M.inv[id] || 0) + Math.max(1, Math.round(dt * (1 + u)));
+  });
+  const th = n.xc.cpuTh, maxI = th ? Math.max(...Object.values(th).map(q => Math.max(q.rint, q.fint || 0))) : 0;
+  M.hist.push({ t: now, tot, intr }); const keep = Math.min(Math.max(330, maxI) * 1000, 3600000); while (M.hist.length && now - M.hist[0].t > keep) M.hist.shift();
+  if (th) Object.entries(th).forEach(([ty, c]) => {
+    const metric = h => ty === 'process' ? h.tot - h.intr : ty === 'interrupt' ? h.intr : h.tot;
+    const avg = sec => { const lo = now - sec * 1000, v = M.hist.filter(h => h.t >= lo).map(metric); return v.length ? v.reduce((s, q) => s + q, 0) / v.length : 0; };
+    const cover = sec => M.hist.length > 1 && now - M.hist[0].t >= (sec - 1) * 1000, fall = c.fall === undefined ? c.rise : c.fall, fint = c.fint === undefined ? c.rint : c.fint;
+    if (!M.rs[ty]) { if (cover(c.rint) && avg(c.rint) >= c.rise) { M.rs[ty] = true; cpuThrFire(n, ty, true, avg(c.rint), M); } }
+    else if (cover(fint) && avg(fint) <= fall) { M.rs[ty] = false; cpuThrFire(n, ty, false, avg(fint), M); }
+  });
+  envTick(n, dt, M);
+}
+function cpuShow(n, x) {
+  const a = x.args, w = a[0] ? pval('en:sorted|history', a[0]) : null; if (a[0] && !w) return x.inv(0);
+  const M = cpuM(n), r = v => Math.round(v), P = cpuProcs(n);
+  if (w === 'history') {
+    if (a.length > 1) return x.inv(1);
+    const H = M.hist.slice(-60).map(h => h.tot).reverse(); while (H.length < 60) H.push(0);
+    let s = `\n${n.name}   03:00:00 AM Monday Jan 1 1993 UTC\n\n`;
+    for (let l = 100; l >= 10; l -= 10) s += `${String(l).padStart(3)} ${H.map(v => v >= l ? '#' : ' ').join('')}\n`;
+    return x.out(s + '    0....5....1....1....2....2....3....3....4....4....5....5....6\n              0    5    0    5    0    5    0    5    0    5    0\n                  CPU% per second (last 60 seconds)\n');
+  }
+  let col = '5sec'; if (w === 'sorted' && a[1]) { col = pval('en:5sec|1min|5min', a[1]); if (!col) return x.inv(1); } else if (a.length > 1) return x.inv(1);
+  const rows = P.map(p => { const id = p[0], u5 = M.pr[id] || 0, rt = Math.round(M.rt[id] || 0), iv = Math.round(M.inv[id] || 1); return { id, nm: p[1], u5, u60: M.p60[id] ?? u5, u300: M.p300[id] ?? u5, rt, iv, us: Math.round(rt * 1000 / iv) }; });
+  if (w === 'sorted') { const k = { '5sec': 'u5', '1min': 'u60', '5min': 'u300' }[col]; rows.sort((p, q) => q[k] - p[k]); }
+  x.out(`CPU utilization for five seconds: ${r(M.u5)}%/${r(M.intr)}%; one minute: ${r(M.u60)}%; five minutes: ${r(M.u300)}%\n PID Runtime(ms)     Invoked      uSecs   5Sec   1Min   5Min TTY Process \n` + rows.map(q => `${String(q.id).padStart(4)} ${String(q.rt).padStart(11)} ${String(q.iv).padStart(11)} ${String(q.us).padStart(10)} ${(q.u5.toFixed(2) + '%').padStart(6)} ${(q.u60.toFixed(2) + '%').padStart(6)} ${(q.u300.toFixed(2) + '%').padStart(6)} ${String(0).padStart(3)} ${q.nm}\n`).join(''));
+}
+function envText(n, w) {
+  const e = envSt(n), L = envLim(n), T = Math.round(e.T), sw = n.kind === 'switch', S = ['OK', 'WARNING', 'CRITICAL'][e.st], G = ['GREEN', 'YELLOW', 'RED'][e.st], Nm = ['NORMAL', 'WARNING', 'CRITICAL'][e.st];
+  const fan = sw ? `FAN is ${e.fan ? 'OK' : 'FAULTY'}\n` : `Fan Tray 1: ${e.fan ? 'OK (running)' : 'FAILED'}\n`;
+  const temp = `${sw ? 'TEMPERATURE' : 'SYSTEM TEMPERATURE'} is ${S}\nTemperature Value: ${T} Degree Celsius\nTemperature State: ${sw ? G : Nm}\n` + (sw ? `Yellow Threshold : ${L.y} Degree Celsius\nRed Threshold    : ${L.r} Degree Celsius\n` : `Warning Threshold : ${L.y} Degree Celsius\nCritical Threshold: ${L.r} Degree Celsius\n`);
+  const pw = sw ? 'POWER is OK\n' : 'Power Supply 1: OK (AC input present)\n';
+  const alarms = `Number of Critical alarms:  ${(e.st === 2 ? 1 : 0) + (e.fan ? 0 : 1)}\nNumber of Major alarms:     0\nNumber of Minor alarms:     ${e.st === 1 ? 1 : 0}\n`;
+  if (w === 'temperature') return temp; if (w === 'fan') return fan; if (w === 'power') return pw; if (w === 'alarm') return alarms;
+  return sw ? fan + `TEMPERATURE is ${S}\n` + pw + 'RPS is NOT PRESENT\n' : 'Environmental Monitoring status\n-------------------------------\n' + fan + pw + `Temperature: Inlet ${T} Celsius (${Nm.toLowerCase()}; warning ${L.y}, critical ${L.r})\n` + alarms;
+}
+/* CLI: show environment / show processes cpu / process cpu threshold / simulator load-temperature-fan overrides */
+function extraTree(n, X) {
+  if (!cpuIsDev(n)) return; const { add } = X, xc = n.xc;
+  const envCmd = x => { const a = x.args, w = a[0] ? pval('en:all|temperature|fan|power|alarm|status', a[0]) : 'all'; if (!w) return x.inv(0); if (a.length > 2 || (a[1] && !pval('en:status', a[1]))) return x.inv(1); x.out(envText(n, w === 'status' ? 'all' : w)); };
+  const cpuThr = x => {
+    const a = x.args; if (!a.length) return x.inc(); const ty = pval('en:total|process|interrupt', a[0]); if (!ty) return x.inv(0);
+    if (x.no) { if (xc.cpuTh) { delete xc.cpuTh[ty]; if (!Object.keys(xc.cpuTh).length) xc.cpuTh = undefined; } if (n._cm) delete n._cm.rs[ty]; return; }
+    if (a.length < 5) return x.inc(); if (!pval('lit:rising', a[1])) return x.inv(1);
+    const rise = pval('int:1-100', a[2]); if (rise === undefined) return x.inv(2); if (!pval('lit:interval', a[3])) return x.inv(3);
+    const rint = pval('int:5-86400', a[4]); if (rint === undefined) return x.inv(4); const th = { rise, rint };
+    if (a.length > 5) {
+      if (a.length < 9) return x.inc(); if (a.length > 9) return x.inv(9); if (!pval('lit:falling', a[5])) return x.inv(5);
+      const fall = pval('int:1-100', a[6]); if (fall === undefined) return x.inv(6); if (fall > rise) return x.out('% Falling threshold must not be higher than the rising threshold\n');
+      if (!pval('lit:interval', a[7])) return x.inv(7); const fint = pval('int:5-86400', a[8]); if (fint === undefined) return x.inv(8); th.fall = fall; th.fint = fint;
+    }
+    (xc.cpuTh = xc.cpuTh || {})[ty] = th; if (n._cm) delete n._cm.rs[ty];
+  };
+  const simCpu = x => { const a = x.args; if (!a.length) return x.inc(); if (a.length > 1) return x.inv(1); if (pval('en:auto', a[0])) { n._cpuSim = undefined; return x.out('CPU load: automatic (derived from traffic)\n'); } const v = pval('int:0-100', a[0]); if (v === undefined) return x.inv(0); n._cpuSim = v; x.out(`CPU load forced to ${v}% (simulator override; "simulate cpu auto" releases it)\n`); };
+  const simTemp = x => { const a = x.args; if (!a.length) return x.inc(); if (a.length > 1) return x.inv(1); const e = envSt(n); if (pval('en:auto', a[0])) { e.sim = null; return x.out('Temperature: automatic (derived from CPU load and fan state)\n'); } const v = pval('int:0-120', a[0]); if (v === undefined) return x.inv(0); e.sim = v; x.out(`Temperature forced to ${v} Celsius (simulator override; "simulate temperature auto" releases it)\n`); };
+  const simFan = x => { const a = x.args; if (!a.length) return x.inc(); if (a.length > 1) return x.inv(1); const v = pval('en:fail|ok', a[0]); if (!v) return x.inv(0); envSt(n).fan = v === 'ok'; };
+  add('priv', B([['show environment', envCmd, { p: { opt: 1 }, u: 1 }], ['show processes cpu', x => cpuShow(n, x), { p: { opt: 1 }, u: 1 }], ['simulate cpu', simCpu, { p: {} }], ['simulate temperature', simTemp, { p: {} }], ['simulate fan', simFan, { p: {} }]]));
+  add('conf', B([['process cpu threshold type', cpuThr, { p: {} }]]));
+  if (n.kind === 'switch') {
+    const swArp = x => {
+      if (x.args.length) return x.inv(0);
+      x.out('Protocol  Address          Age (min)  Hardware Addr   Type   Interface\n');
+      const L = n.l3ifs().filter(p => p.ip);
+      L.forEach(p => x.out(`Internet  ${pad(p.ip, 16)} ${pad('-', 10)} ${pad(String(p.mac || n.mac || '').toLowerCase(), 15)} ARPA   ${p.name}\n`));
+      Object.entries(n.arp || {}).forEach(([ip, m]) => { const p = L.find(q => q.mask && same(q.ip, ip, q.mask)); x.out(`Internet  ${pad(ip, 16)} ${pad('0', 10)} ${pad(String(m).toLowerCase(), 15)} ARPA   ${p ? p.name : ''}\n`); });
+    };
+    add('priv', B([['show ip arp', swArp, { u: 1 }], ['show arp', swArp, { u: 1 }]]));
+  }
+}
 function sysPoll() {
   const c = window.__spc = (window.__spc || 0) + 1;
   for (const n of E.nodes) {
     if (!n || !n.ports || !n.xc) continue;
+    try { cpuTick(n); natExpire(n); } catch (_) { }
     for (const p of n.ports) { if (p.con) continue; const up = !!p.ok; snmpRate(p); if (p._ls === undefined) { p._ls = up; continue; } if (p._ls !== up) { p._ls = up; p._lcT = E.now; sysLog(n, 3, 'LINK-3-UPDOWN', `Interface ${p.name}, changed state to ${up ? 'up' : 'down'}`); sysLog(n, 5, 'LINEPROTO-5-UPDOWN', `Line protocol on Interface ${p.name}, changed state to ${up ? 'up' : 'down'}`); snmpNotify(n, up ? 'linkup' : 'linkdown', p); } }
     if (n.bgpS) { n._bu = n._bu || {}; for (const s of n.bgpS) { if (n._bu[s.ip] !== undefined && n._bu[s.ip] !== s.up) { sysLog(n, 5, 'BGP-5-ADJCHANGE', `neighbor ${s.ip} ${s.up ? 'Up' : 'Down'}`); snmpNotify(n, s.up ? 'bgpup' : 'bgpdown', null, [{ oid: `1.3.6.1.2.1.15.3.1.7.${s.ip}`, t: 'IP', v: s.ip }, { oid: `1.3.6.1.2.1.15.3.1.2.${s.ip}`, t: 'Integer', v: s.up ? 6 : 1 }]); } n._bu[s.ip] = s.up; } }
     if (n.nbr && n.nbr.ospf) { const cur = new Map(n.nbr.ospf.map(e => [e.ip + '|' + e.ifn, e])), old = n._onb; n._onb = cur;
@@ -3307,14 +3513,15 @@ function sysPoll() {
 /* ───────── SNMP: real agent / manager / traps over the simulated packet path (UDP 161 requests, UDP 162 traps) ───────── */
 const SNMP_ALL = ['authentication', 'linkdown', 'linkup', 'coldstart', 'warmstart'];
 const SNMP_TRAP_OID = { coldstart: '1.3.6.1.6.3.1.1.5.1', warmstart: '1.3.6.1.6.3.1.1.5.2', linkdown: '1.3.6.1.6.3.1.1.5.3', linkup: '1.3.6.1.6.3.1.1.5.4', authentication: '1.3.6.1.6.3.1.1.5.5',
-  config: '1.3.6.1.4.1.9.9.43.2.0.1', syslog: '1.3.6.1.4.1.9.9.41.2.0.1', bgpup: '1.3.6.1.2.1.15.7.1', bgpdown: '1.3.6.1.2.1.15.7.2', ospf: '1.3.6.1.2.1.14.16.2.2', psec: '1.3.6.1.4.1.9.9.315.0.0.1', vlancreate: '1.3.6.1.4.1.9.9.46.2.0.7', vlandelete: '1.3.6.1.4.1.9.9.46.2.0.8' };
-const SNMP_TYPE_OF = { bgpup: 'bgp', bgpdown: 'bgp', psec: 'port-security' };
+  config: '1.3.6.1.4.1.9.9.43.2.0.1', syslog: '1.3.6.1.4.1.9.9.41.2.0.1', bgpup: '1.3.6.1.2.1.15.7.1', bgpdown: '1.3.6.1.2.1.15.7.2', ospf: '1.3.6.1.2.1.14.16.2.2', psec: '1.3.6.1.4.1.9.9.315.0.0.1', vlancreate: '1.3.6.1.4.1.9.9.46.2.0.7', vlandelete: '1.3.6.1.4.1.9.9.46.2.0.8',
+  cpurise: '1.3.6.1.4.1.9.9.109.2.0.1', cpufall: '1.3.6.1.4.1.9.9.109.2.0.2', envtemp: '1.3.6.1.4.1.9.9.13.3.0.3', envfan: '1.3.6.1.4.1.9.9.13.3.0.4' };
+const SNMP_TYPE_OF = { bgpup: 'bgp', bgpdown: 'bgp', psec: 'port-security', cpurise: 'cpu', cpufall: 'cpu', envtemp: 'envmon', envfan: 'envmon' };
 const SNMP_OTHER = ['config', 'ospf', 'bgp', 'syslog', 'port-security', 'vtp', 'entity', 'envmon', 'cpu threshold'];
 /* is the trap kind enabled by `snmp-server enable traps ...` ? */
 function snmpTrapOn(S, kind) {
   if (SNMP_ALL.includes(kind)) return !!S.tr[kind];
   const E2 = S.oth.map(o => o.split(' ')); if (kind === 'vlancreate' || kind === 'vlandelete') return E2.some(w => w[0] === 'vtp' && (w.length === 1 || w.includes(kind)));
-  const ty = SNMP_TYPE_OF[kind] || kind; return E2.some(w => w[0] === ty);
+  const ty = SNMP_TYPE_OF[kind] || kind; return E2.some(w => w[0] === ty && (ty !== 'envmon' || w.length === 1 || w.includes(kind === 'envtemp' ? 'temperature' : 'fan')));
 }
 const snmpSt = xc => xc.sn || (xc.sn = { loc: '', con: '', hosts: [], tr: {}, oth: [], st: { in: 0, out: 0, badver: 0, badcomm: 0, illegal: 0, get: 0, next: 0, set: 0, vars: 0, alt: 0, resp: 0, nosuch: 0, badval: 0, gen: 0, traps: 0, informs: 0, informAck: 0, informDrop: 0 } });
 const SNMP_NAMES = [
@@ -3332,9 +3539,14 @@ const SNMP_NAMES = [
   ['1.3.6.1.2.1.14.16.2.2', 'ospfNbrStateChange', 'OSPF-TRAP-MIB'], ['1.3.6.1.2.1.14.1.1', 'ospfRouterId', 'OSPF-MIB'], ['1.3.6.1.2.1.14.10.1.1', 'ospfNbrIpAddr', 'OSPF-MIB'], ['1.3.6.1.2.1.14.10.1.6', 'ospfNbrState', 'OSPF-MIB'],
   ['1.3.6.1.4.1.9.9.315.0.0.1', 'cpsSecureMacAddrViolation', 'CISCO-PORT-SECURITY-MIB'], ['1.3.6.1.4.1.9.9.315.1.2.1.1.10', 'cpsIfSecureLastMacAddress', 'CISCO-PORT-SECURITY-MIB'],
   ['1.3.6.1.4.1.9.9.46.2.0.7', 'vtpVlanCreated', 'CISCO-VTP-MIB'], ['1.3.6.1.4.1.9.9.46.2.0.8', 'vtpVlanDeleted', 'CISCO-VTP-MIB'], ['1.3.6.1.4.1.9.9.46.1.3.1.1.4', 'vtpVlanName', 'CISCO-VTP-MIB'],
-  ['1.3.6.1.6.3.1.1.5.3', 'linkDown', 'SNMPv2-MIB'], ['1.3.6.1.6.3.1.1.5.4', 'linkUp', 'SNMPv2-MIB'], ['1.3.6.1.6.3.1.1.5.5', 'authenticationFailure', 'SNMPv2-MIB']
+  ['1.3.6.1.6.3.1.1.5.3', 'linkDown', 'SNMPv2-MIB'], ['1.3.6.1.6.3.1.1.5.4', 'linkUp', 'SNMPv2-MIB'], ['1.3.6.1.6.3.1.1.5.5', 'authenticationFailure', 'SNMPv2-MIB'],
+  ['1.3.6.1.4.1.9.9.109.1.1.1.1.1', 'cpmCPUTotalIndex', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.2', 'cpmCPUTotalPhysicalIndex', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.3', 'cpmCPUTotal5sec', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.4', 'cpmCPUTotal1min', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.5', 'cpmCPUTotal5min', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.6', 'cpmCPUTotal5secRev', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.7', 'cpmCPUTotal1minRev', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.8', 'cpmCPUTotal5minRev', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.10', 'cpmCPUTotalMonIntervalValue', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.1.1.1.1.11', 'cpmCPUInterruptMonIntervalValue', 'CISCO-PROCESS-MIB'],
+  ['1.3.6.1.4.1.9.9.109.2.0.1', 'cpmCPURisingThreshold', 'CISCO-PROCESS-MIB'], ['1.3.6.1.4.1.9.9.109.2.0.2', 'cpmCPUFallingThreshold', 'CISCO-PROCESS-MIB'],
+  ['1.3.6.1.4.1.9.9.13.1.3.1.2', 'ciscoEnvMonTemperatureStatusDescr', 'CISCO-ENVMON-MIB'], ['1.3.6.1.4.1.9.9.13.1.3.1.3', 'ciscoEnvMonTemperatureStatusValue', 'CISCO-ENVMON-MIB'], ['1.3.6.1.4.1.9.9.13.1.3.1.4', 'ciscoEnvMonTemperatureThreshold', 'CISCO-ENVMON-MIB'], ['1.3.6.1.4.1.9.9.13.1.3.1.6', 'ciscoEnvMonTemperatureState', 'CISCO-ENVMON-MIB'],
+  ['1.3.6.1.4.1.9.9.13.1.4.1.2', 'ciscoEnvMonFanStatusDescr', 'CISCO-ENVMON-MIB'], ['1.3.6.1.4.1.9.9.13.1.4.1.3', 'ciscoEnvMonFanState', 'CISCO-ENVMON-MIB'],
+  ['1.3.6.1.4.1.9.9.13.3.0.3', 'ciscoEnvMonTemperatureNotification', 'CISCO-ENVMON-MIB'], ['1.3.6.1.4.1.9.9.13.3.0.4', 'ciscoEnvMonFanNotification', 'CISCO-ENVMON-MIB']
 ];
-const SNMP_ENUM = { '1.3.6.1.2.1.2.2.1.7': { 1: 'up', 2: 'down', 3: 'testing' }, '1.3.6.1.2.1.2.2.1.8': { 1: 'up', 2: 'down', 3: 'testing' }, '1.3.6.1.2.1.2.2.1.3': { 6: 'ethernetCsmacd', 22: 'propPointToPointSerial', 24: 'softwareLoopback', 53: 'propVirtual' }, '1.3.6.1.2.1.4.1': { 1: 'forwarding', 2: 'notForwarding' }, '1.3.6.1.2.1.15.3.1.2': { 1: 'idle', 2: 'connect', 3: 'active', 4: 'opensent', 5: 'openconfirm', 6: 'established' }, '1.3.6.1.2.1.14.10.1.6': { 1: 'down', 2: 'attempt', 3: 'init', 4: 'twoWay', 5: 'exchangeStart', 6: 'exchange', 7: 'loading', 8: 'full' }, '1.3.6.1.4.1.9.9.43.1.1.6.1.3': { 1: 'commandLine', 2: 'snmp' } };
+const SNMP_ENUM = { '1.3.6.1.4.1.9.9.13.1.3.1.6': { 1: 'normal', 2: 'warning', 3: 'critical', 4: 'shutdown', 5: 'notPresent', 6: 'notFunctioning' }, '1.3.6.1.4.1.9.9.13.1.4.1.3': { 1: 'normal', 2: 'warning', 3: 'critical', 4: 'shutdown', 5: 'notPresent', 6: 'notFunctioning' }, '1.3.6.1.2.1.2.2.1.7': { 1: 'up', 2: 'down', 3: 'testing' }, '1.3.6.1.2.1.2.2.1.8': { 1: 'up', 2: 'down', 3: 'testing' }, '1.3.6.1.2.1.2.2.1.3': { 6: 'ethernetCsmacd', 22: 'propPointToPointSerial', 24: 'softwareLoopback', 53: 'propVirtual' }, '1.3.6.1.2.1.4.1': { 1: 'forwarding', 2: 'notForwarding' }, '1.3.6.1.2.1.15.3.1.2': { 1: 'idle', 2: 'connect', 3: 'active', 4: 'opensent', 5: 'openconfirm', 6: 'established' }, '1.3.6.1.2.1.14.10.1.6': { 1: 'down', 2: 'attempt', 3: 'init', 4: 'twoWay', 5: 'exchangeStart', 6: 'exchange', 7: 'loading', 8: 'full' }, '1.3.6.1.4.1.9.9.43.1.1.6.1.3': { 1: 'commandLine', 2: 'snmp' } };
 const SNMP_REASON = { noSuchName: 'There is no such variable name in this MIB.', noAccess: 'Access denied.', notWritable: 'That object does not support modification.', wrongType: 'The set value has the wrong type.', wrongValue: 'The set value is invalid.', badValue: 'A variable has a bad value.', noCreation: 'That table does not support row creation or that object is not writable.' };
 const oidCmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] === undefined ? -1 : x[i]) - (y[i] === undefined ? -1 : y[i]); if (d) return d; } return 0; };
 function snmpOid(s) {
@@ -3394,6 +3606,12 @@ function snmpMib(n) {
     A('1.3.6.1.2.1.5.14.0', 'Counter', C.icOut); A('1.3.6.1.2.1.5.15.0', 'Counter', 0); A('1.3.6.1.2.1.5.16.0', 'Counter', C.icOutDest); A('1.3.6.1.2.1.5.17.0', 'Counter', C.icOutTime); A('1.3.6.1.2.1.5.21.0', 'Counter', C.icOutEcho); A('1.3.6.1.2.1.5.22.0', 'Counter', C.icOutRep);
     A('1.3.6.1.2.1.7.1.0', 'Counter', C.udpIn); A('1.3.6.1.2.1.7.2.0', 'Counter', 0); A('1.3.6.1.2.1.7.4.0', 'Counter', C.udpOut); }
   A('1.3.6.1.2.1.11.1.0', 'Counter', st.in); A('1.3.6.1.2.1.11.2.0', 'Counter', st.out); A('1.3.6.1.2.1.11.4.0', 'Counter', st.badcomm); A('1.3.6.1.2.1.11.15.0', 'Counter', st.get); A('1.3.6.1.2.1.11.16.0', 'Counter', st.next); A('1.3.6.1.2.1.11.17.0', 'Counter', st.set);
+  if (cpuIsDev(n)) {
+    const Mc = cpuM(n), ev = envSt(n), Lm = envLim(n), r = Math.round, c = z => `1.3.6.1.4.1.9.9.109.1.1.1.1.${z}.1`;
+    A(c(1), 'Integer', 1); A(c(2), 'Integer', 1); A(c(3), 'Gauge', r(Mc.u5)); A(c(4), 'Gauge', r(Mc.u60)); A(c(5), 'Gauge', r(Mc.u300)); A(c(6), 'Gauge', r(Mc.u5)); A(c(7), 'Gauge', r(Mc.u60)); A(c(8), 'Gauge', r(Mc.u300)); A(c(10), 'Gauge', r(Mc.tot)); A(c(11), 'Gauge', r(Mc.intr));
+    A('1.3.6.1.4.1.9.9.13.1.3.1.2.1', 'String', 'SYSTEM'); A('1.3.6.1.4.1.9.9.13.1.3.1.3.1', 'Gauge', r(ev.T)); A('1.3.6.1.4.1.9.9.13.1.3.1.4.1', 'Gauge', Lm.y); A('1.3.6.1.4.1.9.9.13.1.3.1.6.1', 'Integer', ev.st === 0 ? 1 : ev.st === 1 ? 2 : 3);
+    A('1.3.6.1.4.1.9.9.13.1.4.1.2.1', 'String', 'Fan 1'); A('1.3.6.1.4.1.9.9.13.1.4.1.3.1', 'Integer', ev.fan ? 1 : 6);
+  }
   return M.sort((a, b) => oidCmp(a[0], b[0]));
 }
 function snmpSetVar(n, o, t, v, dry) {
@@ -3410,6 +3628,7 @@ function snmpSetVar(n, o, t, v, dry) {
 const snmpNid = n => n.id + ':' + (n.nidc = (n.nidc || 0) + 1);
 function snmpTx(n, dip, data, info, src) { data = { ...data, nid: data.nid || snmpNid(n) }; return n.rOut ? n.rOut(dip, 'SNMP', data, info, 255, src || '') : n.send(dip, 'SNMP', data, info); }
 function snmpAgentIn(n, k) {
+  cpuHit(n, 4);
   const d = k.data, xc = n.xc, S = snmpSt(xc), st = S.st;
   if (!d || d.op === 'trap' || d.op === 'inform') return;
   if (d.op === 'resp') { n.fire('inf' + d.rid, d); return; }
@@ -3630,7 +3849,7 @@ function snmpShowOut(xc, x) {
   if (!xc.snmp.length && !snmpV3On(xc)) return x.out('%SNMP agent not enabled\n');
   const S = snmpSt(xc), s = S.st;
   x.out(`${S.con ? 'Contact: ' + S.con + '\n' : ''}${S.loc ? 'Location: ' + S.loc + '\n' : ''}${s.in} SNMP packets input\n    ${s.badver} Bad SNMP version errors\n    ${s.badcomm} Unknown community name\n    ${s.illegal} Illegal operation for community name supplied\n    0 Encoding errors\n    ${s.vars} Number of requested variables\n    ${s.alt} Number of altered variables\n    ${s.get} Get-request PDUs\n    ${s.next} Get-next PDUs\n    ${s.set} Set-request PDUs\n    0 Input queue packet drops (Maximum queue size 1000)\n${s.out} SNMP packets output\n    0 Too big errors (Maximum packet size 1500)\n    ${s.nosuch} No such name errors\n    ${s.badval} Bad values errors\n    ${s.gen} General errors\n    ${s.resp} Response PDUs\n    ${s.traps} Trap PDUs\n    ${s.informs} Inform request PDUs\n    ${s.informAck} Inform acknowledged\n    ${s.informDrop} Inform dropped (retries exhausted)\n`);
-  x.out(`SNMP global trap: ${SNMP_ALL.some(t => S.tr[t]) ? 'enabled' : 'disabled'}\n`);
+  x.out(`SNMP global trap: ${SNMP_ALL.some(t => S.tr[t]) || (S.oth && S.oth.length) ? 'enabled' : 'disabled'}\n`);
   if (S.hosts.length) { x.out('\nSNMP logging: enabled\n'); S.hosts.forEach(h => x.out(`    Logging to ${h.ip}.162, 0/10, ${h.sent || 0} sent, ${h.dropped | 0} dropped.\n`)); } else x.out('\nSNMP logging: disabled\n');
 }
 function snmpCommOut(xc, x) { if (!xc.snmp.length) return x.out('%SNMP agent not enabled\n'); xc.snmp.forEach(q => x.out(`\nCommunity name: ${q.s}\nCommunity Index: ${q.s}\nCommunity SecurityName: ${q.s}\nstorage-type: nonvolatile\t active${q.acl ? '\naccess-list: ' + q.acl : ''}\nAccess: ${q.m.toUpperCase()}\n`)); }
